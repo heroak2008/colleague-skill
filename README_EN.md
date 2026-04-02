@@ -31,17 +31,6 @@ It answers in your voice, writes in your style, and knows when to say "no"
 
 </div>
 
----
-
-### 🌟 Related Project: [ex.skill](https://github.com/titanwings/ex-skill)
-
-> Want to distill an ex into AI? Try **[ex.skill](https://github.com/titanwings/ex-skill)**!
->
-> You left? Use **shadow-clone.skill**. Your ex left? Use **[ex.skill](https://github.com/titanwings/ex-skill)**. Cyber-immortality, end to end 🌟🌟🌟
->
-> If you find this interesting, give both projects a Star!
-
----
 
 ## Supported Data Sources
 
