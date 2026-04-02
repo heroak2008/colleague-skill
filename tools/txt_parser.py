@@ -457,6 +457,129 @@ def format_output(target_name: str, extracted: dict) -> str:
 
 # ─── CLI 入口 ─────────────────────────────────────────────────────────────────
 
+# 关系选项映射（用户输入 → 内部 key；None 表示跳过/不指定）
+_RELATION_INPUT_MAP: dict[str, str | None] = {
+    "1": "superior",
+    "2": "peer",
+    "3": "junior",
+    "s": None,
+}
+
+
+def _expand_paths(inputs: list[str], recursive: bool = True) -> list[Path]:
+    """
+    将输入路径（文件或目录）展开为去重后的 .txt 文件列表。
+    与 parse_paths 的路径遍历逻辑一致，但只返回文件列表而不解析内容。
+    """
+    files: list[Path] = []
+    seen: set[Path] = set()
+
+    for raw in inputs:
+        p = Path(raw).expanduser()
+        if not p.exists():
+            print(f"警告：路径不存在，已跳过：{p}", file=sys.stderr)
+            continue
+        if p.is_file():
+            real = p.resolve()
+            if real not in seen:
+                seen.add(real)
+                files.append(p)
+        elif p.is_dir():
+            pattern = "**/*.txt" if recursive else "*.txt"
+            found = sorted(p.glob(pattern))
+            if not found:
+                print(f"警告：目录中未找到 .txt 文件：{p}", file=sys.stderr)
+            for f in found:
+                real = f.resolve()
+                if real not in seen:
+                    seen.add(real)
+                    files.append(f)
+        else:
+            print(f"警告：不支持的路径类型，已跳过：{p}", file=sys.stderr)
+
+    return files
+
+
+def _interactive_assign_relations(
+    files: list[Path],
+) -> list[tuple[Path, str | None]]:
+    """
+    交互式为多个聊天记录文件分别指定关系类型。
+
+    每个文件先显示识别到的说话人及消息数，再让用户选择：
+      [1] 上级（superior）
+      [2] 同级（peer）
+      [3] 下级（junior）
+      [s] 跳过（不指定关系）
+
+    返回 (文件路径, 关系类型) 列表；关系类型为 None 表示未指定。
+    """
+    results: list[tuple[Path, str | None]] = []
+    total = len(files)
+    print(f"\n共检测到 {total} 个聊天记录文件，请为每个文件指定对话对象的关系类型。\n")
+
+    for idx, path in enumerate(files, 1):
+        print(f"─── 文件 {idx}/{total}：{path.name} ───")
+
+        msgs = parse_file(path)
+        if not msgs:
+            print("  （文件为空或无法解析，已跳过）\n")
+            results.append((path, None))
+            continue
+
+        speakers = get_speakers(msgs)
+        counts: dict[str, int] = {}
+        for m in msgs:
+            counts[m["sender"]] = counts.get(m["sender"], 0) + 1
+
+        print("  识别到的说话人：")
+        for sp in speakers:
+            print(f"    · {sp}（{counts[sp]} 条）")
+
+        print()
+        print("  请选择对话对象的关系类型：")
+        print("    [1] 上级（superior）")
+        print("    [2] 同级（peer）")
+        print("    [3] 下级（junior）")
+        print("    [s] 跳过（不指定关系）")
+        print()
+
+        relation: str | None = None
+        while True:
+            raw = input("  请输入选项 [1/2/3/s]：").strip().lower()
+            if raw in _RELATION_INPUT_MAP:
+                relation = _RELATION_INPUT_MAP[raw]
+                break
+            print("  无效输入，请输入 1、2、3 或 s。")
+
+        _label_map: dict[str | None, str] = {
+            "superior": "上级",
+            "peer": "同级",
+            "junior": "下级",
+            None: "未指定",
+        }
+        print(f"  → 已设置为：{_label_map[relation]}\n")
+        results.append((path, relation))
+
+    return results
+
+
+def _apply_file_relations(file_relations: list[tuple[Path, str | None]]) -> list[dict]:
+    """
+    按照 _interactive_assign_relations 返回的 (path, relation) 列表，
+    逐文件解析并将关系类型注入每条消息的 relation 字段。
+    relation 为 None 时不添加字段（保持向后兼容）。
+    """
+    all_messages: list[dict] = []
+    for path, rel in file_relations:
+        msgs = parse_file(path)
+        if rel is not None:
+            for m in msgs:
+                m["relation"] = rel
+        all_messages.extend(msgs)
+    return all_messages
+
+
 def _interactive_select_target(speakers: list[str]) -> str:
     """交互式选择目标说话人。"""
     print("\n检测到以下说话人（按消息数量排序）：\n")
@@ -502,8 +625,11 @@ def main() -> None:
   # 列出识别到的全部说话人
   python3 tools/txt_parser.py --input chat.txt --list-speakers
 
-  # 解析多个文件/目录，不递归
+  # 解析多个文件/目录，不递归（交互式逐文件指定关系类型）
   python3 tools/txt_parser.py --input chat1.txt chat2.txt --target "李四" --no-recursive
+
+  # 解析多个文件，统一指定关系类型（跳过交互式关系选择）
+  python3 tools/txt_parser.py --input chat1.txt chat2.txt --target "李四" --relation peer
 
 支持的 TXT 格式（详见 README）：
   格式 1：  2024-01-01 10:00:00 张三：内容
@@ -546,7 +672,8 @@ def main() -> None:
         help=(
             "聊天对象的关系类型（可选）："
             "superior（上级/领导）、peer（同级/平级）、junior（后辈/下属）。"
-            "未指定则不附加关系标注（等同于混合文件）。"
+            "指定后将统一应用于所有输入文件，并跳过交互式关系选择。"
+            "未指定时：若导入多个文件且处于交互模式，则逐文件询问关系类型。"
         ),
     )
     parser.add_argument(
@@ -566,7 +693,17 @@ def main() -> None:
     recursive = not args.no_recursive
 
     # ── 解析所有输入
-    all_messages = parse_paths(args.input, recursive=recursive, relation=args.relation)
+    # 若导入多个文件且未指定统一 --relation，在交互模式下逐文件询问关系类型
+    all_messages: list[dict] = []
+    if args.relation is None and sys.stdin.isatty() and not args.list_speakers:
+        files = _expand_paths(args.input, recursive=recursive)
+        if len(files) > 1:
+            file_relations = _interactive_assign_relations(files)
+            all_messages = _apply_file_relations(file_relations)
+        else:
+            all_messages = parse_paths(args.input, recursive=recursive, relation=args.relation)
+    else:
+        all_messages = parse_paths(args.input, recursive=recursive, relation=args.relation)
 
     if not all_messages:
         print("错误：未解析到任何消息，请检查文件路径和格式。", file=sys.stderr)
