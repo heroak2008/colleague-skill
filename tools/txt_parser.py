@@ -21,6 +21,9 @@ TXT 聊天记录解析器
   格式 6 — 企业工号格式（名字+工号 制表符 时间，内容另起一行）
       张三(z00611745)\t2026-01-04 15:58:23
       消息内容
+  格式 7 — 仅工号格式（工号 制表符 时间，内容另起一行；以工号作为 sender）
+      (z00611745)\t2026-01-04 15:58:23
+      消息内容
 
 每条消息解析为 {"timestamp": str, "sender": str, "content": str}。
 
@@ -73,6 +76,13 @@ _RE_TIMESTAMP_LINE = re.compile(
 # 例：张三(z00611745)\t2026-01-04 15:58:23
 _RE_CORP_HEADER = re.compile(
     r"^(?P<sender>[^\(\n]+)\([^\)]+\)\t(?P<time>\d{4}[-/]\d{1,2}[-/]\d{1,2}"
+    r"(?:[T \t]\d{1,2}:\d{2}(?::\d{2})?)?)$"
+)
+
+# 格式 7：仅工号格式 — "(工号)\t时间戳"，内容另起一行，以工号作为 sender
+# 例：(z00611745)\t2026-01-04 15:58:23
+_RE_CORP_ID_ONLY_HEADER = re.compile(
+    r"^\((?P<sender>[^\)\n]+)\)\t(?P<time>\d{4}[-/]\d{1,2}[-/]\d{1,2}"
     r"(?:[T \t]\d{1,2}:\d{2}(?::\d{2})?)?)$"
 )
 
@@ -140,6 +150,17 @@ def _parse_lines(lines: Iterator[str]) -> list[dict]:
     for raw in lines:
         line = raw.strip()
         if not line:
+            continue
+
+        # ── 格式 7：仅工号格式 — "(工号)\t时间"，内容另起一行
+        # 例：(z00611745)\t2026-01-04 15:58:23
+        # 注意：必须在格式 6 之前检查，避免格式 6 的正则误匹配
+        m = _RE_CORP_ID_ONLY_HEADER.match(raw.rstrip("\r\n"))
+        if m:
+            _flush()
+            pending_time = m.group("time").strip()
+            pending_sender = m.group("sender").strip()
+            pending_lines = []
             continue
 
         # ── 格式 6：企业工号格式 — "姓名(工号)\t时间"，内容另起一行

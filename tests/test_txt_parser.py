@@ -177,6 +177,78 @@ class TestFormat6:
         assert "z00611745" not in msgs[0]["sender"]
 
 
+class TestFormat7:
+    """格式 7：仅工号格式 — (工号)<TAB>时间戳，内容另起一行，以工号作为 sender"""
+
+    def test_id_only_format_basic(self):
+        lines = [
+            "(z00611745)\t2026-01-04 15:58:23",
+            "刚收假就一堆事push",
+            "(y00612385)\t2026-01-04 15:59:32",
+            "我需求都没拆",
+        ]
+        msgs = _parse_lines(iter(lines))
+        assert len(msgs) == 2
+        assert msgs[0]["sender"] == "z00611745"
+        assert msgs[0]["timestamp"] == "2026-01-04 15:58:23"
+        assert msgs[0]["content"] == "刚收假就一堆事push"
+        assert msgs[1]["sender"] == "y00612385"
+        assert msgs[1]["timestamp"] == "2026-01-04 15:59:32"
+        assert msgs[1]["content"] == "我需求都没拆"
+
+    def test_id_only_format_multiline_content(self):
+        lines = [
+            "(z00611745)\t2026-01-04 15:58:23",
+            "第一行内容",
+            "第二行内容",
+            "(y00612385)\t2026-01-04 16:00:00",
+            "另一条消息",
+        ]
+        msgs = _parse_lines(iter(lines))
+        assert len(msgs) == 2
+        assert "第一行内容" in msgs[0]["content"]
+        assert "第二行内容" in msgs[0]["content"]
+
+    def test_id_only_format_file(self, tmp_path):
+        f = tmp_path / "id_only_chat.txt"
+        content = (
+            "(z00611745)\t2026-01-04 15:58:23\n"
+            "刚收假就一堆事push\n"
+            "(y00612385)\t2026-01-04 15:59:32\n"
+            "我需求都没拆\n"
+        )
+        f.write_text(content, encoding="utf-8")
+        msgs = parse_file(f)
+        assert len(msgs) == 2
+        assert msgs[0]["sender"] == "z00611745"
+        assert msgs[1]["sender"] == "y00612385"
+
+    def test_id_only_format_filter_by_target(self):
+        lines = [
+            "(z00611745)\t2026-01-04 15:58:23",
+            "刚收假就一堆事push",
+            "(y00612385)\t2026-01-04 15:59:32",
+            "我需求都没拆",
+        ]
+        msgs = _parse_lines(iter(lines))
+        filtered = filter_by_target(msgs, "z00611745")
+        assert len(filtered) == 1
+        assert filtered[0]["sender"] == "z00611745"
+
+    def test_id_only_does_not_conflict_with_format6(self):
+        """格式 7 和格式 6 混合时各自正确解析。"""
+        lines = [
+            "赵星(z00611745)\t2026-01-04 15:58:23",
+            "格式6的消息",
+            "(y00612385)\t2026-01-04 15:59:32",
+            "格式7的消息",
+        ]
+        msgs = _parse_lines(iter(lines))
+        assert len(msgs) == 2
+        assert msgs[0]["sender"] == "赵星"
+        assert msgs[1]["sender"] == "y00612385"
+
+
 class TestFormat4:
     """格式 4：说话人：内容（无时间）"""
 
