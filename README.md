@@ -31,17 +31,6 @@
 
 </div>
 
----
-
-### 🌟 同系列项目：[前任.skill](https://github.com/titanwings/ex-skill)
-
-> 想把前任也蒸馏成 AI？试试 **[前任.skill](https://github.com/titanwings/ex-skill)**！
->
-> 自己跑了用 **影分身.skill**，前任跑了用 **[前任.skill](https://github.com/titanwings/ex-skill)**，赛博永生一条龙 🌟🌟🌟
->
-> 觉得有意思的话，给两个项目都点个 Star 吧！
-
----
 
 ## 支持的数据来源
 
