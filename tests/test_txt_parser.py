@@ -479,3 +479,122 @@ class TestCLI:
         )
         assert result.returncode == 1
         assert "王五" in result.stderr
+
+
+# ─── 关系标注测试 ──────────────────────────────────────────────────────────────
+
+class TestRelationField:
+    """测试 --relation 参数和 relation 字段"""
+
+    def test_parse_paths_with_superior_relation(self, tmp_path):
+        f = tmp_path / "chat_leader.txt"
+        f.write_text("张三：向领导汇报进展\n张三：没问题，会按时完成\n", encoding="utf-8")
+        msgs = parse_paths([str(f)], relation="superior")
+        assert len(msgs) == 2
+        assert all(m["relation"] == "superior" for m in msgs)
+
+    def test_parse_paths_with_peer_relation(self, tmp_path):
+        f = tmp_path / "chat_peer.txt"
+        f.write_text("张三：这方案有个问题\n张三：我觉得应该重新设计\n", encoding="utf-8")
+        msgs = parse_paths([str(f)], relation="peer")
+        assert all(m["relation"] == "peer" for m in msgs)
+
+    def test_parse_paths_with_junior_relation(self, tmp_path):
+        f = tmp_path / "chat_junior.txt"
+        f.write_text("张三：你先想想这个问题怎么解\n", encoding="utf-8")
+        msgs = parse_paths([str(f)], relation="junior")
+        assert msgs[0]["relation"] == "junior"
+
+    def test_parse_paths_no_relation_default_none(self, tmp_path):
+        f = tmp_path / "chat_mixed.txt"
+        f.write_text("张三：普通消息\n", encoding="utf-8")
+        msgs = parse_paths([str(f)])
+        # 未传 relation 时消息不带 relation 字段（或字段不存在）
+        assert msgs[0].get("relation") is None
+
+    def test_extract_key_content_by_relation_grouping(self):
+        msgs = [
+            {"timestamp": "", "sender": "张三", "content": "汇报进展", "relation": "superior"},
+            {"timestamp": "", "sender": "张三", "content": "同意你的方案", "relation": "peer"},
+            {"timestamp": "", "sender": "张三", "content": "你先想想这个问题", "relation": "junior"},
+            {"timestamp": "", "sender": "张三", "content": "普通消息"},
+        ]
+        extracted = extract_key_content(msgs)
+        assert "by_relation" in extracted
+        by_rel = extracted["by_relation"]
+        assert "superior" in by_rel
+        assert "peer" in by_rel
+        assert "junior" in by_rel
+        assert "unknown" in by_rel
+
+    def test_extract_key_content_by_relation_counts(self):
+        msgs = [
+            {"timestamp": "", "sender": "张三", "content": "汇报：进展顺利，按计划推进中", "relation": "superior"},
+            {"timestamp": "", "sender": "张三", "content": "同意", "relation": "peer"},
+            {"timestamp": "", "sender": "张三", "content": "好的", "relation": "superior"},
+        ]
+        extracted = extract_key_content(msgs)
+        by_rel = extracted["by_relation"]
+        superior_total = (
+            len(by_rel["superior"]["long_messages"])
+            + len(by_rel["superior"]["decision_messages"])
+            + len(by_rel["superior"]["daily_messages"])
+        )
+        peer_total = (
+            len(by_rel["peer"]["long_messages"])
+            + len(by_rel["peer"]["decision_messages"])
+            + len(by_rel["peer"]["daily_messages"])
+        )
+        assert superior_total == 2
+        assert peer_total == 1
+
+    def test_extract_key_content_backward_compat(self):
+        """无 relation 字段的旧格式消息仍能正常分类，归入 unknown。"""
+        msgs = [
+            {"timestamp": "", "sender": "张三", "content": "好的"},
+        ]
+        extracted = extract_key_content(msgs)
+        assert extracted["total_count"] == 1
+        assert len(extracted["daily_messages"]) == 1
+        unknown_daily = extracted["by_relation"]["unknown"]["daily_messages"]
+        assert len(unknown_daily) == 1
+
+    def test_format_output_with_relation_sections(self):
+        msgs = [
+            {"timestamp": "", "sender": "张三", "content": "汇报进展，领导", "relation": "superior"},
+            {"timestamp": "", "sender": "张三", "content": "跟同级讨论方案", "relation": "peer"},
+        ]
+        extracted = extract_key_content(msgs)
+        output = format_output("张三", extracted)
+        assert "跟领导的对话" in output
+        assert "跟同级的对话" in output
+
+    def test_format_output_no_relation_uses_flat_format(self):
+        """无 relation 标注时，输出保持原有平铺格式（长消息/决策类/日常沟通）。"""
+        msgs = [
+            {"timestamp": "", "sender": "张三", "content": "好的"},
+        ]
+        extracted = extract_key_content(msgs)
+        output = format_output("张三", extracted)
+        assert "日常沟通" in output
+        # 无关系分类时不应出现关系标题
+        assert "跟领导的对话" not in output
+
+    def test_cli_relation_parameter(self, tmp_path):
+        f = tmp_path / "chat.txt"
+        f.write_text("张三：向领导汇报\n", encoding="utf-8")
+        out = tmp_path / "out.txt"
+        import subprocess, sys
+        result = subprocess.run(
+            [sys.executable, "tools/txt_parser.py",
+             "--input", str(f),
+             "--target", "张三",
+             "--relation", "superior",
+             "--output", str(out)],
+            capture_output=True, text=True,
+            cwd=str(Path(__file__).parent.parent),
+        )
+        assert result.returncode == 0
+        assert out.exists()
+        content = out.read_text(encoding="utf-8")
+        assert "跟领导的对话" in content

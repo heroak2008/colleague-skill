@@ -229,10 +229,14 @@ def parse_file(path: Path) -> list[dict]:
 def parse_paths(
     inputs: list[str],
     recursive: bool = True,
+    relation: str | None = None,
 ) -> list[dict]:
     """
     解析一组路径（文件或目录），返回所有消息（按文件顺序）。
     directories：若 recursive=True 则递归查找 *.txt。
+
+    relation：可选，为所有解析出的消息附加关系标注。
+      接受 "superior"（上级）、"peer"（同级）、"junior"（后辈）或 None（未标注）。
     """
     all_messages: list[dict] = []
     visited: set[Path] = set()
@@ -243,6 +247,9 @@ def parse_paths(
             return
         visited.add(real)
         msgs = parse_file(p)
+        if relation is not None:
+            for m in msgs:
+                m["relation"] = relation
         all_messages.extend(msgs)
 
     for raw in inputs:
@@ -281,12 +288,24 @@ def filter_by_target(messages: list[dict], target: str) -> list[dict]:
     return [m for m in messages if target in m["sender"]]
 
 
+_RELATION_LABELS = {
+    "superior": "跟领导的对话（上级视角）",
+    "peer": "跟同级的对话",
+    "junior": "跟后辈的对话（下级视角）",
+}
+
+_VALID_RELATIONS = set(_RELATION_LABELS.keys())
+
+
 def extract_key_content(messages: list[dict]) -> dict:
     """
     将消息分类提取：
     - long_messages：>50 字，可能含观点/方案
     - decision_messages：含决策类关键词
     - daily_messages：其他日常沟通
+
+    同时按 relation（superior / peer / junior / None）做二级分组，
+    结果存于 by_relation，每个 bucket 的结构与顶层相同。
     """
     long_messages: list[dict] = []
     decision_messages: list[dict] = []
@@ -298,27 +317,102 @@ def extract_key_content(messages: list[dict]) -> dict:
         "没问题", "有问题", "风险", "评估", "判断", "计划", "优先",
     ]
 
+    # 按 relation 分桶
+    by_relation: dict[str, dict] = {
+        "superior": {"long_messages": [], "decision_messages": [], "daily_messages": []},
+        "peer":     {"long_messages": [], "decision_messages": [], "daily_messages": []},
+        "junior":   {"long_messages": [], "decision_messages": [], "daily_messages": []},
+        "unknown":  {"long_messages": [], "decision_messages": [], "daily_messages": []},
+    }
+
     for msg in messages:
         content = msg["content"]
+        relation = msg.get("relation") or "unknown"
+        if relation not in by_relation:
+            relation = "unknown"
+
         if len(content) > 50:
-            long_messages.append(msg)
+            bucket = "long_messages"
         elif any(kw in content for kw in decision_keywords):
+            bucket = "decision_messages"
+        else:
+            bucket = "daily_messages"
+
+        # 顶层列表（全量）
+        if bucket == "long_messages":
+            long_messages.append(msg)
+        elif bucket == "decision_messages":
             decision_messages.append(msg)
         else:
             daily_messages.append(msg)
+
+        # 按关系分桶
+        by_relation[relation][bucket].append(msg)
 
     return {
         "long_messages": long_messages,
         "decision_messages": decision_messages,
         "daily_messages": daily_messages,
         "total_count": len(messages),
+        "by_relation": by_relation,
     }
 
 
 # ─── 输出格式化 ────────────────────────────────────────────────────────────────
 
+def _format_relation_section(relation_key: str, bucket: dict) -> list[str]:
+    """为单个关系类型（superior/peer/junior/unknown）生成输出段落。"""
+    label = _RELATION_LABELS.get(relation_key, "未分类对话")
+    total = (
+        len(bucket["long_messages"])
+        + len(bucket["decision_messages"])
+        + len(bucket["daily_messages"])
+    )
+    if total == 0:
+        return []
+
+    lines = [
+        f"## {label}",
+        f"消息数：{total}",
+        "",
+        "### 长消息（观点/方案类，权重最高）",
+        "",
+    ]
+    for msg in bucket["long_messages"]:
+        ts = f"[{msg['timestamp']}] " if msg["timestamp"] else ""
+        lines.append(f"{ts}{msg['content']}")
+        lines.append("")
+
+    lines += ["### 决策类回复", ""]
+    for msg in bucket["decision_messages"]:
+        ts = f"[{msg['timestamp']}] " if msg["timestamp"] else ""
+        lines.append(f"{ts}{msg['content']}")
+        lines.append("")
+
+    lines += ["### 日常沟通（风格参考）", ""]
+    for msg in bucket["daily_messages"][:100]:
+        ts = f"[{msg['timestamp']}] " if msg["timestamp"] else ""
+        lines.append(f"{ts}{msg['content']}")
+
+    return lines
+
+
 def format_output(target_name: str, extracted: dict) -> str:
-    """格式化提取结果，供 AI 分析使用。"""
+    """格式化提取结果，供 AI 分析使用。
+
+    当 extracted 中存在 by_relation 且有多于 unknown 的关系分桶时，
+    按关系类型分段输出；否则沿用原有的统一输出格式。
+    """
+    by_relation: dict = extracted.get("by_relation", {})
+    has_relation_data = any(
+        (
+            len(by_relation.get(r, {}).get("long_messages", []))
+            + len(by_relation.get(r, {}).get("decision_messages", []))
+            + len(by_relation.get(r, {}).get("daily_messages", []))
+        ) > 0
+        for r in ("superior", "peer", "junior")
+    )
+
     lines = [
         "# TXT 聊天记录提取结果",
         f"目标人物：{target_name}",
@@ -326,38 +420,37 @@ def format_output(target_name: str, extracted: dict) -> str:
         "",
         "---",
         "",
-        "## 长消息（观点/方案类，权重最高）",
-        "",
     ]
 
-    for msg in extracted["long_messages"]:
-        ts = f"[{msg['timestamp']}] " if msg["timestamp"] else ""
-        lines.append(f"{ts}{msg['content']}")
-        lines.append("")
+    if has_relation_data:
+        # 按关系类型分段输出
+        for rel_key in ("superior", "peer", "junior", "unknown"):
+            bucket = by_relation.get(rel_key, {})
+            section = _format_relation_section(rel_key, bucket)
+            if section:
+                lines.extend(section)
+                lines += ["", "---", ""]
+    else:
+        # 无关系标注：沿用原有统一输出格式
+        lines += [
+            "## 长消息（观点/方案类，权重最高）",
+            "",
+        ]
+        for msg in extracted["long_messages"]:
+            ts = f"[{msg['timestamp']}] " if msg["timestamp"] else ""
+            lines.append(f"{ts}{msg['content']}")
+            lines.append("")
 
-    lines += [
-        "---",
-        "",
-        "## 决策类回复",
-        "",
-    ]
+        lines += ["---", "", "## 决策类回复", ""]
+        for msg in extracted["decision_messages"]:
+            ts = f"[{msg['timestamp']}] " if msg["timestamp"] else ""
+            lines.append(f"{ts}{msg['content']}")
+            lines.append("")
 
-    for msg in extracted["decision_messages"]:
-        ts = f"[{msg['timestamp']}] " if msg["timestamp"] else ""
-        lines.append(f"{ts}{msg['content']}")
-        lines.append("")
-
-    lines += [
-        "---",
-        "",
-        "## 日常沟通（风格参考）",
-        "",
-    ]
-
-    # 日常消息只取前 100 条，避免过长
-    for msg in extracted["daily_messages"][:100]:
-        ts = f"[{msg['timestamp']}] " if msg["timestamp"] else ""
-        lines.append(f"{ts}{msg['content']}")
+        lines += ["---", "", "## 日常沟通（风格参考）", ""]
+        for msg in extracted["daily_messages"][:100]:
+            ts = f"[{msg['timestamp']}] " if msg["timestamp"] else ""
+            lines.append(f"{ts}{msg['content']}")
 
     return "\n".join(lines)
 
@@ -446,6 +539,17 @@ def main() -> None:
         help="列出识别到的全部说话人后退出（不输出消息内容）",
     )
     parser.add_argument(
+        "--relation",
+        default=None,
+        choices=["superior", "peer", "junior"],
+        metavar="RELATION",
+        help=(
+            "聊天对象的关系类型（可选）："
+            "superior（上级/领导）、peer（同级/平级）、junior（后辈/下属）。"
+            "未指定则不附加关系标注（等同于混合文件）。"
+        ),
+    )
+    parser.add_argument(
         "--no-recursive",
         action="store_true",
         help="处理目录时不递归，仅读取一级 .txt 文件",
@@ -462,7 +566,7 @@ def main() -> None:
     recursive = not args.no_recursive
 
     # ── 解析所有输入
-    all_messages = parse_paths(args.input, recursive=recursive)
+    all_messages = parse_paths(args.input, recursive=recursive, relation=args.relation)
 
     if not all_messages:
         print("错误：未解析到任何消息，请检查文件路径和格式。", file=sys.stderr)
@@ -521,6 +625,7 @@ def main() -> None:
         out_path = Path(args.output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(output_text, encoding="utf-8")
+        relation_info = f"   关系类型：{args.relation}" if args.relation else ""
         print(
             f"✅ 已输出到 {args.output}\n"
             f"   目标人物：{target}\n"
@@ -528,6 +633,7 @@ def main() -> None:
             f"   长消息：{len(extracted['long_messages'])}  "
             f"决策类：{len(extracted['decision_messages'])}  "
             f"日常：{len(extracted['daily_messages'])}"
+            + (f"\n{relation_info}" if relation_info else "")
         )
     else:
         print(output_text)
