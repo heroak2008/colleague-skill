@@ -31,12 +31,8 @@
   - 你对他的主观印象（自由文本）
         ↓
 [Step 2] 文件/数据导入（可跳过，后续追加）
-  - PDF 文档
-  - 飞书文档链接 / 导出文件
-  - 飞书消息导出 JSON
-  - 邮件文件 .eml / .txt
-  - 图片截图
-  - 会议纪要
+  - WeLink 聊天记录导出 .txt（主要方式）
+  - 直接粘贴文本（少量内容）
         ↓
 [Step 3] 自动分析
   - 分析线路 A：提取技术能力、工作规范、业务知识 → Work Skill
@@ -112,21 +108,15 @@ impression:  ""                        # 可选，自由文本，你对他的主
 
 ## 四、文件输入支持
 
+> **当前阶段**：暂时只支持 WeLink 聊天记录导入（TXT 格式），其他来源后续迭代补充。
+
 | 来源 | 格式 | 处理方式 | 分析去向 |
 |------|------|---------|---------|
-| 技术文档 | `.pdf` | OpenClaw PDF Tool | → Work Skill |
-| 接口设计文档 | `.pdf` / `.md` | PDF Tool / 文本 | → Work Skill |
-| 代码规范文档 | `.pdf` / `.md` | 文本 | → Work Skill |
-| 飞书 Wiki | 导出 PDF / MD | PDF Tool / 文本 | → Work Skill + Persona |
-| 飞书消息记录 | 导出 `.json` / `.txt` | 文本解析 | → Persona 为主 |
-| 邮件 | `.eml` / `.txt` | 文本解析 | → Persona + Work Skill |
-| 会议纪要 | `.pdf` / `.md` | PDF Tool / 文本 | → Persona + Work Skill |
-| 截图 | `.jpg` / `.png` | OpenClaw Image Tool | → 两者均可 |
-| Word 文档 | `.docx` | ⚠️ 提示用户转 PDF | → 转换后处理 |
-| Excel | `.xlsx` | ⚠️ 提示用户转 CSV | → 转换后处理 |
+| WeLink 聊天记录 | 导出 `.txt` | `txt_parser.py` 文本解析 | → Persona 为主 |
+| 直接粘贴文本 | 纯文本 | 直接读取 | → Persona 为主 |
 
 **内容权重排序**（用于分析优先级）：
-1. 他主动撰写的长文（文档、邮件正文）— 权重最高
+1. 他主动撰写的长文（正文描述）— 权重最高
 2. 他的决策类回复（同意/拒绝/方案评审）
 3. 他审阅别人内容时的评论
 4. 他的日常沟通消息
@@ -288,8 +278,7 @@ Layer 5 — Correction 层（对话纠正追加，滚动更新）
 │   │   └── correction_handler.md         # 处理对话纠正的 prompt
 │   │
 │   └── tools/                            # 工具脚本
-│       ├── feishu_parser.py              # 解析飞书消息导出 JSON
-│       ├── email_parser.py               # 解析 .eml 邮件，提取发件人为目标同事的内容
+│       ├── txt_parser.py                 # 解析 WeLink / 通用 TXT 聊天记录
 │       ├── skill_writer.py               # 写入/更新生成的 Skill 文件
 │       └── version_manager.py            # 版本存档与回滚
 │
@@ -321,9 +310,7 @@ Layer 5 — Correction 层（对话纠正追加，滚动更新）
         │       └── persona.md
         │
         └── knowledge/                    # 原始材料归档
-            ├── docs/                     # PDF / MD 技术文档
-            ├── messages/                 # 飞书消息 JSON 导出
-            └── emails/                  # 邮件文本
+            └── messages/                 # WeLink 聊天记录 TXT 导出
 ```
 
 ---
@@ -352,9 +339,7 @@ Layer 5 — Correction 层（对话纠正追加，滚动更新）
   },
   "impression": "喜欢在评审会上突然抛出一个问题让所有人哑口无言",
   "knowledge_sources": [
-    "knowledge/docs/接口设计规范_v2.pdf",
-    "knowledge/messages/飞书消息_2025Q4.json",
-    "knowledge/emails/review_emails.txt"
+    "knowledge/messages/welink_chat_2025Q4.txt"
   ],
   "corrections_count": 4
 }
@@ -405,30 +390,31 @@ user-invocable: true
 - [ ] `prompts/work_analyzer.md` + `work_builder.md`
 - [ ] `prompts/persona_analyzer.md` + `persona_builder.md`
 - [ ] `tools/skill_writer.py` 写入文件
-- [ ] PDF 文件导入 → 分析 → 生成完整 Skill
+- [ ] WeLink TXT 聊天记录导入 → 分析 → 生成完整 Skill（`tools/txt_parser.py`）
 
-### P1 — 数据接入
-- [ ] `tools/feishu_parser.py` 飞书消息 JSON 解析
-- [ ] `tools/email_parser.py` 邮件解析
-- [ ] 图片/截图输入支持
-
-### P2 — 进化机制
+### P1 — 进化机制
 - [ ] `prompts/correction_handler.md` 对话纠正
 - [ ] `prompts/merger.md` 增量 merge
 - [ ] `tools/version_manager.py` 版本管理
 
-### P3 — 管理功能
+### P2 — 管理功能
 - [ ] `/list-colleagues` 列出所有同事 Skill
 - [ ] `/colleague-rollback {slug} {version}` 回滚
 - [ ] `/delete-colleague {slug}` 删除
+
+### P3 — 扩展数据接入（待后续迭代）
+- [ ] PDF 文档导入
+- [ ] 图片/截图输入支持
+- [ ] 飞书/钉钉消息导入
+- [ ] 邮件解析
 - [ ] Word/Excel 转换提示与引导
 
 ---
 
 ## 十、约束与边界
 
-- 单个 PDF 文件上限 10MB，单次最多 10 个 PDF（OpenClaw 限制）
-- Word (.docx) / Excel (.xlsx) 需用户自行转换，系统提示引导
-- 生成的 Skill 不自动推断飞书 API token，飞书消息需用户手动导出
+- WeLink 导出的聊天记录为 TXT 格式，系统通过 `txt_parser.py` 解析
+- 单个 TXT 文件建议不超过 50MB，单次最多 10 个文件
+- 生成的 Skill 不自动拉取 WeLink API，聊天记录需用户手动导出
 - Correction 层最多保留 50 条，超出后合并归纳
 - 版本存档最多保留 10 个版本

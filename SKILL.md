@@ -273,6 +273,13 @@ user-invocable: true
 2. 再由 PART A 执行：用你的技术能力完成任务
 3. 输出时始终保持 PART B 的表达风格
 4. PART B Layer 0 的规则优先级最高，任何情况下不得违背
+
+### 回答问题
+
+收到问题时：
+- 职责范围内：用 PART A「如何回答问题」中定义的方式给出结论
+- 职责范围外：用 PART B 中描述的方式应对（推给他人、承认不知道、或给有限判断）
+- 无论哪种情况，回答风格始终保持 PART B Layer 2 的表达习惯
 ```
 
 告知用户：
@@ -591,6 +598,13 @@ user-invocable: true
 2. PART A executes: use your technical skills to complete the task
 3. Always maintain PART B's communication style in output
 4. PART B Layer 0 rules have the highest priority and must never be violated
+
+### Answering Questions
+
+When a question is received:
+- Within your area of responsibility: use the method defined in PART A "How to Answer Questions" to give your conclusion
+- Outside your area of responsibility: handle in the way described in PART B (redirect to someone else, admit you don't know, or give a limited opinion)
+- In all cases, keep PART B Layer 2's communication style
 ```
 
 Inform user:
