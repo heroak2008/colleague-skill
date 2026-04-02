@@ -137,15 +137,10 @@ def create_skill(
     (skill_dir / "knowledge" / "docs").mkdir(parents=True, exist_ok=True)
     (skill_dir / "knowledge" / "messages").mkdir(parents=True, exist_ok=True)
     (skill_dir / "knowledge" / "emails").mkdir(parents=True, exist_ok=True)
-    (skill_dir / "conversations").mkdir(exist_ok=True)
 
-    # 初始化空群组注册表
-    contexts_path = skill_dir / "conversations" / "contexts.json"
-    if not contexts_path.exists():
-        contexts_path.write_text(
-            json.dumps({"groups": []}, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+    # input/ 目录：用户将对话记录 TXT 放到对应子目录
+    for subdir in ("上级", "同级", "下级", "群组"):
+        (skill_dir / "input" / subdir).mkdir(parents=True, exist_ok=True)
 
     # 写入 work.md
     (skill_dir / "work.md").write_text(work_content, encoding="utf-8")
@@ -327,15 +322,14 @@ def list_colleagues(base_dir: Path) -> list:
         except Exception:
             continue
 
-        # Count conversation groups
-        contexts_path = skill_dir / "conversations" / "contexts.json"
-        group_count = 0
-        if contexts_path.exists():
-            try:
-                contexts = json.loads(contexts_path.read_text(encoding="utf-8"))
-                group_count = len(contexts.get("groups", []))
-            except Exception:
-                pass
+        # Count input files across all relation subdirs
+        input_dir = skill_dir / "input"
+        input_count = 0
+        if input_dir.is_dir():
+            for subdir in ("上级", "同级", "下级", "群组"):
+                sdir = input_dir / subdir
+                if sdir.is_dir():
+                    input_count += sum(1 for _ in sdir.glob("*.txt"))
 
         colleagues.append({
             "slug": meta.get("slug", skill_dir.name),
@@ -344,7 +338,7 @@ def list_colleagues(base_dir: Path) -> list:
             "version": meta.get("version", "v1"),
             "updated_at": meta.get("updated_at", ""),
             "corrections_count": meta.get("corrections_count", 0),
-            "group_count": group_count,
+            "input_count": input_count,
         })
 
     return colleagues
@@ -378,8 +372,8 @@ def main() -> None:
             for c in colleagues:
                 updated = c["updated_at"][:10] if c["updated_at"] else "未知"
                 print(f"  [{c['slug']}]  {c['name']} — {c['identity']}")
-                groups_str = f"  群组: {c['group_count']} 个" if c.get('group_count', 0) > 0 else ""
-                print(f"    版本: {c['version']}  纠正次数: {c['corrections_count']}{groups_str}  更新: {updated}")
+                input_str = f"  对话记录: {c['input_count']} 个" if c.get("input_count", 0) > 0 else ""
+                print(f"    版本: {c['version']}  纠正次数: {c['corrections_count']}{input_str}  更新: {updated}")
                 print()
 
     elif args.action == "create":
