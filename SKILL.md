@@ -72,6 +72,7 @@ allowed-tools: Read, Write, Edit, Bash, computer
 | 版本管理 | `Bash` → `python3 ${SKILL_DIR}/tools/version_manager.py` |
 | 列出已有 Skill | `Bash` → `python3 ${SKILL_DIR}/tools/skill_writer.py --action list` |
 | 加载对话上下文（运行时） | `Bash` → `python3 ${SKILL_DIR}/tools/input_loader.py` |
+| 习惯活跃度检查 | `Bash` → `python3 ${SKILL_DIR}/tools/habit_manager.py` |
 
 **基础目录**：Skill 文件写入 `./colleagues/{slug}/`（相对于本项目目录）。
 如需改为全局路径，用 `--base-dir ~/.opencode/skills/colleagues`（OpenCode）或 `--base-dir ~/.codex/skills/colleagues`（Codex）。
@@ -328,6 +329,14 @@ user-invocable: true
 - 无论哪种情况，回答风格始终保持 PART B Layer 2 的表达习惯
 ```
 
+**6. 初始化习惯追踪档案**（用 Bash）：
+```bash
+python3 ${SKILL_DIR}/tools/habit_manager.py init \
+  --slug {slug} --base-dir ./colleagues
+```
+> 此步骤从 persona.md Layer 2 提取口头禅 / 高频词，写入 `habits.json`，用于追踪说话习惯的活跃状态。
+> Layer 0（核心性格）不受此规则影响。
+
 告知用户：
 ```
 ✅ 同事 Skill 已创建！
@@ -357,6 +366,12 @@ user-invocable: true
 6. 用 `Edit` 工具追加增量内容到对应文件
 7. 重新生成 `SKILL.md`（合并最新 work.md + persona.md）
 8. 更新 `meta.json` 的 version、updated_at 以及 `relation_sources`（追加新来源文件）
+9. 扫描聊天记录，更新习惯活跃状态（用 Bash）：
+   ```bash
+   python3 ${SKILL_DIR}/tools/habit_manager.py scan \
+     --slug {slug} --base-dir ./colleagues
+   ```
+   > 此步骤会检查 Layer 2 的口头禅 / 高频词在最近 input/ 聊天记录中是否仍然出现，超过 90 天未出现的习惯将在下次 `/use` 时被提示降低权重。
 
 ---
 
@@ -492,6 +507,7 @@ python3 ${SKILL_DIR}/tools/input_loader.py load \
 - 将 `load` 命令输出的文本注入到当前会话上下文
 - 按注入的关系类型和风格规则生成回复
 - **找不到对应记录时**：默认以「同级」风格回复，并提示用户可以补充记录
+- **若上下文中含有"以下说话习惯近期未在聊天记录中出现，请降低其使用权重"段落**：对列出的口头禅 / 高频词适当减少使用，改用更通用表达，Layer 0 核心性格规则不受影响
 
 ---
 ---
@@ -547,6 +563,7 @@ This Skill is compatible with Claude Code, OpenCode, Codex CLI, and similar AI c
 | Version management | `Bash` → `python3 ${SKILL_DIR}/tools/version_manager.py` |
 | List existing Skills | `Bash` → `python3 ${SKILL_DIR}/tools/skill_writer.py --action list` |
 | Load conversation context (runtime) | `Bash` → `python3 ${SKILL_DIR}/tools/input_loader.py` |
+| Habit activity check | `Bash` → `python3 ${SKILL_DIR}/tools/habit_manager.py` |
 
 **Base directory**: Skill files are written to `./colleagues/{slug}/` (relative to the project directory).
 For a global path, use `--base-dir ~/.opencode/skills/colleagues` (OpenCode) or `--base-dir ~/.codex/skills/colleagues` (Codex).
@@ -803,6 +820,14 @@ When a question is received:
 - In all cases, keep PART B Layer 2's communication style
 ```
 
+**6. Initialize habit tracking** (Bash):
+```bash
+python3 ${SKILL_DIR}/tools/habit_manager.py init \
+  --slug {slug} --base-dir ./colleagues
+```
+> Extracts catchphrases / high-frequency words from persona.md Layer 2 and writes `habits.json`.
+> Layer 0 (core personality) is not subject to this expiry rule.
+
 Inform user:
 ```
 ✅ Colleague Skill created!
@@ -832,6 +857,12 @@ When user provides new files or text:
 6. Use `Edit` tool to append incremental content to relevant files
 7. Regenerate `SKILL.md` (merge latest work.md + persona.md)
 8. Update `meta.json` version, updated_at, and `relation_sources` (append new source files)
+9. Scan chat logs to update habit activity (Bash):
+   ```bash
+   python3 ${SKILL_DIR}/tools/habit_manager.py scan \
+     --slug {slug} --base-dir ./colleagues
+   ```
+   > Updates `last_observed` for each Layer 2 habit. Habits not seen in the last 90 days will be flagged as reduced-weight in future `/use` sessions.
 
 ---
 
@@ -967,3 +998,4 @@ python3 ${SKILL_DIR}/tools/input_loader.py load \
 - Inject the `load` command output into the current conversation context
 - Generate a reply following the injected relation type and style rules
 - **If no matching record is found**: default to peer style and suggest the user add a record
+- **If the context contains a "habits with reduced weight" section**: reduce usage of the listed catchphrases / high-frequency words, substituting more neutral expressions; Layer 0 core personality rules are unaffected

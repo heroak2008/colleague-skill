@@ -52,6 +52,27 @@ from pathlib import Path
 
 DEFAULT_BASE_DIR = "./colleagues"
 
+# 将 tools/ 目录加入 sys.path，以便在以脚本方式运行时能导入同级模块
+_TOOLS_DIR = Path(__file__).parent
+if str(_TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(_TOOLS_DIR))
+
+try:
+    from habit_manager import get_inactive_habits as _get_inactive_habits_fn  # type: ignore[import]
+    _HABIT_MANAGER_AVAILABLE = True
+except ImportError:
+    _HABIT_MANAGER_AVAILABLE = False
+
+
+def _get_inactive_habits(skill_dir: Path) -> list[dict]:
+    """读取过期习惯列表（active=false）。无 habits.json 或模块不可用时返回空列表。"""
+    if not _HABIT_MANAGER_AVAILABLE:
+        return []
+    try:
+        return _get_inactive_habits_fn(skill_dir)
+    except Exception:
+        return []
+
 # 目录名 → 关系类型（内部英文 key）
 DIR_TO_RELATION: dict[str, str] = {
     "上级": "superior",
@@ -323,6 +344,21 @@ def cmd_load(args: argparse.Namespace, base_dir: Path) -> None:
         lines.append(f"### 群组「{group_name_display}」聊天记录")
         lines.append("")
         lines.append(group_history)
+        lines.append("")
+
+    # 过期习惯提示（降低权重）
+    inactive_habits = _get_inactive_habits(base_dir / args.slug)
+    if inactive_habits:
+        lines.append("### ⚠️ 以下说话习惯近期（90天内）未在聊天记录中出现，请降低其使用权重")
+        lines.append("")
+        lines.append(
+            "以下口头禅 / 高频词在最近三个月的聊天记录中已不再出现，"
+            "在回复时可适当减少使用，改用更通用的表达，但无需完全回避："
+        )
+        lines.append("")
+        for h in inactive_habits:
+            last = h.get("last_observed", "未知")[:10]
+            lines.append(f"- {h['text']!r}（最后见于：{last}）")
         lines.append("")
 
     print("\n".join(lines))

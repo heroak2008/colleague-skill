@@ -27,6 +27,17 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
 
+# 将 tools/ 目录加入 sys.path，以便在以脚本方式运行时能导入同级模块
+_TOOLS_DIR = Path(__file__).parent
+if str(_TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(_TOOLS_DIR))
+
+try:
+    import habit_manager as _habit_manager_mod  # type: ignore[import]
+    _HABIT_MANAGER_AVAILABLE = True
+except ImportError:
+    _HABIT_MANAGER_AVAILABLE = False
+
 
 SKILL_MD_TEMPLATE = """\
 ---
@@ -197,6 +208,13 @@ def create_skill(
         encoding="utf-8",
     )
 
+    # 初始化 Layer 2 习惯追踪档案
+    if _HABIT_MANAGER_AVAILABLE:
+        try:
+            _habit_manager_mod.init_habits(skill_dir)
+        except Exception as e:
+            print(f"警告：习惯初始化失败（不影响主流程）：{e}", file=sys.stderr)
+
     return skill_dir
 
 
@@ -299,6 +317,14 @@ def update_skill(
                         current.append(f)
 
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 更新 Layer 2 习惯追踪档案，并扫描 input/ 刷新时间戳
+    if _HABIT_MANAGER_AVAILABLE:
+        try:
+            _habit_manager_mod.init_habits(skill_dir)
+            _habit_manager_mod.scan_habits(skill_dir)
+        except Exception as e:
+            print(f"警告：习惯更新失败（不影响主流程）：{e}", file=sys.stderr)
 
     return new_version
 
