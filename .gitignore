@@ -1,6 +1,6 @@
-# Generated colleague skills (user data, not committed)
-colleagues/
-!colleagues/example_zhangsan/
+# Generated shadow clone skills (user data, not committed)
+shadows/
+!shadows/example_shadow/
 
 # Python
 __pycache__/
@@ -11,7 +11,7 @@ venv/
 *.egg-info/
 
 # Config with credentials
-~/.colleague-skill/
+~/.shadow-skill/
 
 # Playwright browser data
 playwright-data/

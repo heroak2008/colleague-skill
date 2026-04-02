@@ -1,4 +1,4 @@
-# 同事.skill 安装说明
+# 影分身.skill 安装说明
 
 ---
 
@@ -14,15 +14,15 @@ cd $(git rev-parse --show-toplevel)
 
 # 方式 1：安装到当前项目
 mkdir -p .claude/skills
-git clone https://github.com/heroak2008/colleague-skill .claude/skills/create-colleague
+git clone https://github.com/heroak2008/colleague-skill .claude/skills/create-shadow
 
 # 方式 2：安装到全局（所有项目都能用）
-git clone https://github.com/heroak2008/colleague-skill ~/.claude/skills/create-colleague
+git clone https://github.com/heroak2008/colleague-skill ~/.claude/skills/create-shadow
 ```
 
-然后在 Claude Code 中说 `/create-colleague` 即可启动。
+然后在 Claude Code 中说 `/create-shadow` 即可启动。
 
-生成的同事 Skill 默认写入 `./colleagues/` 目录。
+生成的影分身 Skill 默认写入 `./shadows/` 目录。
 
 ---
 
@@ -33,14 +33,14 @@ git clone https://github.com/heroak2008/colleague-skill ~/.claude/skills/create-
 ```bash
 # 安装到 OpenCode 的 skills 目录
 mkdir -p ~/.opencode/skills
-git clone https://github.com/heroak2008/colleague-skill ~/.opencode/skills/create-colleague
+git clone https://github.com/heroak2008/colleague-skill ~/.opencode/skills/create-shadow
 
 # 设置环境变量（加到 ~/.bashrc 或 ~/.zshrc）
-echo 'export SKILL_DIR="$HOME/.opencode/skills/create-colleague"' >> ~/.bashrc
+echo 'export SKILL_DIR="$HOME/.opencode/skills/create-shadow"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-重启 OpenCode session，说 `/create-colleague` 启动。
+重启 OpenCode session，说 `/create-shadow` 启动。
 
 > **注意**：OpenCode 注入的目录变量为 `${OPENCODE_SKILL_DIR}`（若平台支持），否则请确保 `SKILL_DIR` 已设置。
 
@@ -53,10 +53,10 @@ source ~/.bashrc
 ```bash
 # 1. 安装到 Codex 的 skills 目录
 mkdir -p ~/.codex/skills
-git clone https://github.com/heroak2008/colleague-skill ~/.codex/skills/create-colleague
+git clone https://github.com/heroak2008/colleague-skill ~/.codex/skills/create-shadow
 
 # 2. 设置环境变量（加到 ~/.bashrc 或 ~/.zshrc）
-echo 'export SKILL_DIR="$HOME/.codex/skills/create-colleague"' >> ~/.bashrc
+echo 'export SKILL_DIR="$HOME/.codex/skills/create-shadow"' >> ~/.bashrc
 source ~/.bashrc
 
 # 3. 设置 OpenAI API Key
@@ -64,7 +64,7 @@ echo 'export OPENAI_API_KEY="sk-your-key-here"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-在 Codex CLI 会话中，将 `AGENTS.md` 作为系统指令载入，然后说 `/create-colleague` 启动。
+在 Codex CLI 会话中，将 `AGENTS.md` 作为系统指令载入，然后说 `/create-shadow` 启动。
 
 > **工具名映射**（Codex CLI）：
 > - `Read` → `read_file`
@@ -78,196 +78,29 @@ source ~/.bashrc
 
 ```bash
 # 基础（Python 3.9+）
-pip3 install pypinyin        # 中文姓名转拼音 slug（可选但推荐）
-
-# 飞书浏览器方案（内部文档/需要登录权限的文档）
-pip3 install playwright
-playwright install chromium  # 仅需安装 chromium，不需要完整 Chrome
-
-# 飞书 MCP 方案（公司授权文档，通过 App Token 读取）
-npm install -g feishu-mcp    # 需要 Node.js 16+
+pip3 install pypinyin        # 中文名转拼音 slug（可选但推荐）
 
 # 其他格式支持（可选）
 pip3 install python-docx     # Word .docx 转文本
 pip3 install openpyxl        # Excel .xlsx 转 CSV
 ```
 
-### 平台方案选择指南
-
-| 场景 | 推荐方案 |
-|------|---------|
-| 飞书用户，有 App 权限 | `feishu_auto_collector.py` |
-| 飞书内部文档（无 App 权限）| `feishu_browser.py` |
-| 飞书手动指定链接 | `feishu_mcp_client.py` |
-| 钉钉用户 | `dingtalk_auto_collector.py` |
-| 钉钉消息采集失败 | 手动截图 → 上传图片 |
-| Slack 用户 | `slack_auto_collector.py` |
-
-**飞书自动采集初始化**：
-```bash
-python3 tools/feishu_auto_collector.py --setup
-# 输入飞书开放平台的 App ID 和 App Secret
-```
-
-**钉钉自动采集初始化**：
-```bash
-python3 tools/dingtalk_auto_collector.py --setup
-# 输入钉钉开放平台的 AppKey 和 AppSecret
-# 首次运行加 --show-browser 参数以完成钉钉登录
-```
-
-**飞书 MCP 初始化**（手动指定链接时使用）：
-```bash
-python3 tools/feishu_mcp_client.py --setup
-```
-
-**飞书浏览器方案**（首次使用会弹窗登录，之后自动复用登录态）：
-```bash
-python3 tools/feishu_browser.py \
-  --url "https://xxx.feishu.cn/wiki/xxx" \
-  --show-browser    # 首次使用加这个参数，登录后不再需要
-```
-
-**Slack 自动采集初始化**：
-```bash
-pip3 install slack-sdk
-python3 tools/slack_auto_collector.py --setup
-# 按提示输入 Bot User OAuth Token（xoxb-...）
-```
-
-> Slack 详细配置见下方「[Slack 自动采集配置](#slack-自动采集配置)」章节
-
 ---
-
-## Slack 自动采集配置
-
-### 前置条件
-
-- Python 3.9+
-- Slack Workspace（需要**管理员权限**安装 App，或联系管理员帮你安装）
-- `pip3 install slack-sdk`
-
-> **免费版 Workspace 限制**：只能访问最近 **90 天**的消息记录。付费版（Pro / Business+ / Enterprise）无此限制。
-
----
-
-### 步骤 1：创建 Slack App
-
-1. 前往 [https://api.slack.com/apps](https://api.slack.com/apps) → **Create New App**
-2. 选择 **From scratch**
-3. 填写 App Name（如 `colleague-skill-bot`），选择目标 Workspace → **Create App**
-
----
-
-### 步骤 2：配置 Bot Token Scopes
-
-进入 **OAuth & Permissions** → **Bot Token Scopes** → **Add an OAuth Scope**，添加以下权限：
-
-| Scope | 用途 |
-|-------|------|
-| `users:read` | 搜索用户列表（必需） |
-| `channels:read` | 列出 public channels（必需） |
-| `channels:history` | 读取 public channel 历史消息（必需） |
-| `groups:read` | 列出 private channels（必需） |
-| `groups:history` | 读取 private channel 历史消息（必需） |
-| `mpim:read` | 列出群 DM（可选） |
-| `mpim:history` | 读取群 DM 历史消息（可选） |
-| `im:read` | 列出 DM（可选，需用户授权） |
-| `im:history` | 读取 DM 历史消息（可选，需用户授权） |
-
----
-
-### 步骤 3：安装 App 到 Workspace
-
-1. 仍在 **OAuth & Permissions** 页面，点击 **Install to Workspace**
-2. Workspace 管理员审批后，复制 **Bot User OAuth Token**（格式：`xoxb-...`）
-
----
-
-### 步骤 4：将 Bot 加入目标频道
-
-Bot 只能读取**它已加入**的频道。在 Slack 中，进入每个目标频道，输入：
-
-```
-/invite @your-bot-name
-```
-
-> 提示：如果你不知道目标同事在哪些频道，可以先不邀请，运行采集时脚本会告知 Bot 加入了哪些频道，再补充邀请。
-
----
-
-### 步骤 5：运行配置向导
-
-```bash
-python3 tools/slack_auto_collector.py --setup
-```
-
-按提示粘贴 Bot Token，脚本会自动验证并保存到 `~/.colleague-skill/slack_config.json`。
-
-配置成功后你会看到：
-```
-验证 Token ... OK
-  Workspace：Your Company，Bot：colleague-skill-bot
-
-✅ 配置已保存到 /Users/you/.colleague-skill/slack_config.json
-```
-
----
-
-### 步骤 6：采集同事数据
-
-```bash
-# 基本用法（输入同事的中文名或英文用户名）
-python3 tools/slack_auto_collector.py --name "张三"
-python3 tools/slack_auto_collector.py --name "john.doe"
-
-# 指定输出目录
-python3 tools/slack_auto_collector.py --name "张三" --output-dir ./knowledge/zhangsan
-
-# 限制采集量（大 Workspace 建议先小量测试）
-python3 tools/slack_auto_collector.py --name "张三" --msg-limit 500 --channel-limit 20
-```
-
-输出文件：
-```
-knowledge/张三/
-├── messages.txt            # 按权重分类的消息记录
-└── collection_summary.json # 采集摘要（用户信息、频道列表、时间）
-```
-
----
-
-### 常见报错与解决
-
-| 报错 | 原因 | 解决 |
-|------|------|------|
-| `missing_scope: channels:history` | Bot Token 缺少权限 | 回到 api.slack.com → OAuth & Permissions 添加对应 Scope，重新安装 App |
-| `invalid_auth` | Token 无效或已吊销 | 重新运行 `--setup` 配置新 Token |
-| `not_in_channel` | Bot 未加入该频道 | 在 Slack 里 `/invite @bot` 邀请 Bot |
-| 未找到用户 | 姓名拼写不对 | 改用英文用户名（如 `john.doe`）或 Slack display name |
-| 消息只有 90 天 | 免费版限制 | 升级 Workspace 或手动补充截图 |
-| 速率限制（429）| 请求太频繁 | 脚本会自动等待重试，无需手动处理 |
 
 ## 快速验证
 
 ```bash
 # 进入安装目录（根据你的平台替换路径）
 cd $SKILL_DIR
-# Claude Code:  cd ~/.claude/skills/create-colleague
-# OpenCode:     cd ~/.opencode/skills/create-colleague
-# Codex CLI:    cd ~/.codex/skills/create-colleague
+# Claude Code:  cd ~/.claude/skills/create-shadow
+# OpenCode:     cd ~/.opencode/skills/create-shadow
+# Codex CLI:    cd ~/.codex/skills/create-shadow
 
-# 测试飞书解析器
-python3 tools/feishu_parser.py --help
+# 测试 TXT 解析器
+python3 tools/txt_parser.py --help
 
-# 测试 Slack 采集器
-python3 tools/slack_auto_collector.py --help
-
-# 测试邮件解析器
-python3 tools/email_parser.py --help
-
-# 列出已有同事 Skill
-python3 tools/skill_writer.py --action list --base-dir ./colleagues
+# 列出已有影分身 Skill
+python3 tools/skill_writer.py --action list --base-dir ./shadows
 ```
 
 ---
@@ -277,18 +110,18 @@ python3 tools/skill_writer.py --action list --base-dir ./colleagues
 本项目整个 repo 就是一个 skill 目录（AgentSkills 标准格式）：
 
 ```
-colleague-skill/        ← 克隆到你的平台 skills 目录
+colleague-skill/        ← 克隆到你的平台 skills 目录（名称建议 create-shadow）
 ├── SKILL.md            # skill 入口（AgentSkills frontmatter，适用 Claude Code / OpenCode）
 ├── AGENTS.md           # Codex CLI / OpenAI Agent 入口
 ├── prompts/            # 分析和生成的 Prompt 模板
 ├── tools/              # Python 工具脚本
 ├── docs/               # 文档（PRD 等）
 │
-└── colleagues/         # 生成的同事 Skill 存放处（.gitignore 排除）
+└── shadows/            # 生成的影分身 Skill 存放处（.gitignore 排除）
     └── {slug}/
-        ├── SKILL.md            # 完整 Skill（Persona + Work）
-        ├── work.md             # 仅工作能力
-        ├── persona.md          # 仅人物性格
+        ├── SKILL.md            # 完整 Skill（说话风格 + 知识与能力）
+        ├── work.md             # 仅知识与能力
+        ├── persona.md          # 仅说话风格
         ├── meta.json           # 元数据
         ├── versions/           # 历史版本
         └── knowledge/          # 原始材料归档
