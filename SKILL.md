@@ -41,6 +41,14 @@ allowed-tools: Read, Write, Edit, Bash, computer
 
 当用户说 `/list-colleagues` 时列出所有已生成的同事。
 
+当用户使用 **群组命令** 时，进入群组上下文模式：
+- `/use {slug} [{群组名称}]` — 激活同事 Skill，可选加载指定群组的说话风格和聊天记录
+- `/group create {slug} [--relation superior/peer/junior] [--name 显示名] [--note 背景说明]`
+- `/group import {slug} {群组名称} {文件路径}` — 将解析后的聊天记录导入到指定群组
+- `/group list {slug}` — 列出某同事的所有群组
+- `/group show {slug} {群组名称}` — 查看群组详情
+- `/group delete {slug} {群组名称}` — 删除群组
+
 ---
 
 ## 工具使用规则
@@ -67,6 +75,7 @@ allowed-tools: Read, Write, Edit, Bash, computer
 | 写入/更新 Skill 文件 | `Write` / `write_file` / `Edit` 工具 |
 | 版本管理 | `Bash` → `python3 ${SKILL_DIR}/tools/version_manager.py` |
 | 列出已有 Skill | `Bash` → `python3 ${SKILL_DIR}/tools/skill_writer.py --action list` |
+| 对话群组管理 | `Bash` → `python3 ${SKILL_DIR}/tools/context_manager.py` |
 
 **基础目录**：Skill 文件写入 `./colleagues/{slug}/`（相对于本项目目录）。
 如需改为全局路径，用 `--base-dir ~/.opencode/skills/colleagues`（OpenCode）或 `--base-dir ~/.codex/skills/colleagues`（Codex）。
@@ -238,6 +247,7 @@ mkdir -p colleagues/{slug}/versions
 mkdir -p colleagues/{slug}/knowledge/docs
 mkdir -p colleagues/{slug}/knowledge/messages
 mkdir -p colleagues/{slug}/knowledge/emails
+mkdir -p colleagues/{slug}/conversations
 ```
 
 **2. 写入 work.md**（用 Write 工具）：
@@ -385,6 +395,109 @@ rm -rf colleagues/{slug}
 ```
 
 ---
+
+## 对话群组命令
+
+### `/use {slug} [{群组名称}]` — 激活同事并加载群组上下文
+
+```
+/use zhangsan                      # 激活，无群组（默认平级风格）
+/use zhangsan boss_1on1            # 激活并加载「和老板的 1on1」群组
+```
+
+执行步骤：
+1. 读取 `colleagues/{slug}/SKILL.md`（加载 Work + Persona）
+2. 如果指定了群组名称，执行：
+   ```bash
+   python3 ${SKILL_DIR}/tools/context_manager.py load \
+     --slug {slug} --group-id {群组名称} --base-dir ./colleagues
+   ```
+3. 将 load 命令输出的文本**注入到会话上下文开头**，作为系统级说话风格指令
+4. 告知用户当前激活状态：
+   ```
+   ✅ 已激活：{name}
+   当前群组：{显示名}（{关系类型}）
+   说话风格已切换为「{关系}」模式
+   ```
+
+> **未指定群组时**：以 Persona Layer 4「对平级」的风格交互（默认）。
+
+---
+
+### `/group create {slug}` — 新建对话群组
+
+```
+/group create zhangsan
+```
+
+执行步骤：
+1. 询问用户：
+   ```
+   请填写群组信息：
+   1. 群组 ID（英文或拼音，如 boss_1on1）：
+   2. 显示名（如「和老板的 1on1」）：
+   3. 关系类型：[1] 上级  [2] 平级  [3] 后辈
+   4. 背景说明（可选，如「老板是技术总监，关注 KR 进度」）：
+   ```
+2. 收集完成后执行：
+   ```bash
+   python3 ${SKILL_DIR}/tools/context_manager.py create \
+     --slug {slug} \
+     --group-id {群组ID} \
+     --display-name "{显示名}" \
+     --relation {superior/peer/junior} \
+     --note "{背景说明}" \
+     --base-dir ./colleagues
+   ```
+3. 询问是否导入该群组的聊天记录（可选，见 `/group import`）
+
+---
+
+### `/group import {slug} {群组名称} {文件路径}` — 导入聊天记录
+
+```
+/group import zhangsan boss_1on1 /tmp/txt_parsed_superior.txt
+```
+
+执行：
+```bash
+python3 ${SKILL_DIR}/tools/context_manager.py import \
+  --slug {slug} --group-id {群组名称} \
+  --file {文件路径} \
+  --base-dir ./colleagues
+```
+
+> **提示**：文件路径通常是 `txt_parser.py` 的 `--output` 输出。
+> 每次 import 会覆盖该群组的旧记录（完整替换）。
+
+---
+
+### `/group list {slug}` — 列出群组
+
+```bash
+python3 ${SKILL_DIR}/tools/context_manager.py list \
+  --slug {slug} --base-dir ./colleagues
+```
+
+---
+
+### `/group show {slug} {群组名称}` — 查看群组详情
+
+```bash
+python3 ${SKILL_DIR}/tools/context_manager.py show \
+  --slug {slug} --group-id {群组名称} --base-dir ./colleagues
+```
+
+---
+
+### `/group delete {slug} {群组名称}` — 删除群组
+
+```bash
+python3 ${SKILL_DIR}/tools/context_manager.py delete \
+  --slug {slug} --group-id {群组名称} --base-dir ./colleagues
+```
+
+---
 ---
 
 # English Version
@@ -406,6 +519,14 @@ Enter evolution mode when the user says:
 - `/update-colleague {slug}`
 
 List all generated colleagues when the user says `/list-colleagues`.
+
+When the user uses **group commands**, enter group context mode:
+- `/use {slug} [{group-id}]` — Activate a colleague Skill, optionally loading a group's speaking style and chat records
+- `/group create {slug} [--relation superior/peer/junior] [--name display-name] [--note background]`
+- `/group import {slug} {group-id} {file-path}` — Import parsed chat records into a group
+- `/group list {slug}` — List all groups for a colleague
+- `/group show {slug} {group-id}` — Show group details
+- `/group delete {slug} {group-id}` — Delete a group
 
 ---
 
@@ -433,6 +554,7 @@ This Skill is compatible with Claude Code, OpenCode, Codex CLI, and similar AI c
 | Write/update Skill files | `Write` / `write_file` / `Edit` tool |
 | Version management | `Bash` → `python3 ${SKILL_DIR}/tools/version_manager.py` |
 | List existing Skills | `Bash` → `python3 ${SKILL_DIR}/tools/skill_writer.py --action list` |
+| Group context management | `Bash` → `python3 ${SKILL_DIR}/tools/context_manager.py` |
 
 **Base directory**: Skill files are written to `./colleagues/{slug}/` (relative to the project directory).
 For a global path, use `--base-dir ~/.opencode/skills/colleagues` (OpenCode) or `--base-dir ~/.codex/skills/colleagues` (Codex).
@@ -604,6 +726,7 @@ mkdir -p colleagues/{slug}/versions
 mkdir -p colleagues/{slug}/knowledge/docs
 mkdir -p colleagues/{slug}/knowledge/messages
 mkdir -p colleagues/{slug}/knowledge/emails
+mkdir -p colleagues/{slug}/conversations
 ```
 
 **2. Write work.md** (Write tool):
@@ -748,4 +871,107 @@ python3 ${SKILL_DIR}/tools/version_manager.py --action rollback --slug {slug} --
 After confirmation:
 ```bash
 rm -rf colleagues/{slug}
+```
+
+---
+
+## Group Context Commands
+
+### `/use {slug} [{group-id}]` — Activate colleague and load group context
+
+```
+/use zhangsan                      # Activate with no group (default peer style)
+/use zhangsan boss_1on1            # Activate and load the "boss_1on1" group
+```
+
+Steps:
+1. Read `colleagues/{slug}/SKILL.md` (loads Work + Persona)
+2. If a group ID is specified, run:
+   ```bash
+   python3 ${SKILL_DIR}/tools/context_manager.py load \
+     --slug {slug} --group-id {group-id} --base-dir ./colleagues
+   ```
+3. **Inject** the output at the start of the conversation as a system-level style instruction
+4. Inform the user of the active state:
+   ```
+   ✅ Activated: {name}
+   Current group: {display-name} ({relation type})
+   Speaking style switched to "{relation}" mode
+   ```
+
+> **Without a group**: defaults to Persona Layer 4 "with peers" style.
+
+---
+
+### `/group create {slug}` — Create a new conversation group
+
+```
+/group create zhangsan
+```
+
+Steps:
+1. Ask the user:
+   ```
+   Please provide group info:
+   1. Group ID (alphanumeric/underscore, e.g. boss_1on1):
+   2. Display name (e.g. "1-on-1 with boss"):
+   3. Relation type: [1] Superior  [2] Peer  [3] Junior
+   4. Background note (optional, e.g. "Boss is engineering director, focused on KR progress"):
+   ```
+2. Run:
+   ```bash
+   python3 ${SKILL_DIR}/tools/context_manager.py create \
+     --slug {slug} \
+     --group-id {group-id} \
+     --display-name "{display-name}" \
+     --relation {superior/peer/junior} \
+     --note "{background}" \
+     --base-dir ./colleagues
+   ```
+3. Ask if the user wants to import chat records for this group (optional — see `/group import`)
+
+---
+
+### `/group import {slug} {group-id} {file-path}` — Import chat records
+
+```
+/group import zhangsan boss_1on1 /tmp/txt_parsed_superior.txt
+```
+
+Run:
+```bash
+python3 ${SKILL_DIR}/tools/context_manager.py import \
+  --slug {slug} --group-id {group-id} \
+  --file {file-path} \
+  --base-dir ./colleagues
+```
+
+> **Note**: The file is typically the `--output` from `txt_parser.py`.
+> Each import fully replaces the group's existing records.
+
+---
+
+### `/group list {slug}` — List groups
+
+```bash
+python3 ${SKILL_DIR}/tools/context_manager.py list \
+  --slug {slug} --base-dir ./colleagues
+```
+
+---
+
+### `/group show {slug} {group-id}` — Show group details
+
+```bash
+python3 ${SKILL_DIR}/tools/context_manager.py show \
+  --slug {slug} --group-id {group-id} --base-dir ./colleagues
+```
+
+---
+
+### `/group delete {slug} {group-id}` — Delete a group
+
+```bash
+python3 ${SKILL_DIR}/tools/context_manager.py delete \
+  --slug {slug} --group-id {group-id} --base-dir ./colleagues
 ```
