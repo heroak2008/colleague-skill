@@ -68,6 +68,7 @@ allowed-tools: Read, Write, Edit, Bash, computer
 | 读取图片截图 | `Read` / `read_file` 工具（原生支持图片） |
 | 读取 MD/TXT 文件 | `Read` / `read_file` 工具 |
 | 解析 TXT 聊天记录（推荐） | `Bash` → `python3 ${SKILL_DIR}/tools/txt_parser.py` |
+| 解析本地 Markdown 文档 | `Bash` → `python3 ${SKILL_DIR}/tools/markdown_parser.py` |
 | 写入/更新 Skill 文件 | `Write` / `write_file` / `Edit` 工具 |
 | 版本管理 | `Bash` → `python3 ${SKILL_DIR}/tools/version_manager.py` |
 | 列出已有 Skill | `Bash` → `python3 ${SKILL_DIR}/tools/skill_writer.py --action list` |
@@ -95,7 +96,7 @@ allowed-tools: Read, Write, Edit, Bash, computer
 
 ### Step 2：原材料导入
 
-询问用户提供原材料，展示两种方式供选择：
+询问用户提供原材料，展示三种方式供选择：
 
 ```
 原材料怎么提供？
@@ -106,6 +107,10 @@ allowed-tools: Read, Write, Edit, Bash, computer
 
   [B] 直接粘贴内容
       把文字复制进来（适合文章、笔记、少量文本）
+
+  [C] 导入本地 Markdown 文档（文章/笔记/技术文档）
+      提供你写过的 .md 文件或目录，自动分析你的文档写作习惯和风格
+      分析结果将用于影分身生成文章时仿照你的风格
 
 可以混用，也可以跳过（仅凭手动信息生成）。
 ```
@@ -194,11 +199,44 @@ Read /tmp/txt_parsed.txt
 
 ---
 
+#### 方式 C：导入本地 Markdown 文档
+
+**支持的格式**：`.md` / `.markdown` 文件（单个文件或目录，目录默认递归扫描）
+
+**步骤**：
+
+1. 用户提供 Markdown 文件路径或目录路径
+
+2. **解析文档结构**：
+```bash
+python3 ${SKILL_DIR}/tools/markdown_parser.py \
+  --input {path_or_dir} \
+  --summary
+```
+> 输出：文档写作风格摘要（供后续 LLM 分析使用）
+
+3. 读取摘要输出，进入 Step 3 的**线路 C（文档写作风格）**分析。
+
+4. 若需同时输出 JSON 详情（可选）：
+```bash
+python3 ${SKILL_DIR}/tools/markdown_parser.py \
+  --input {path_or_dir} \
+  --output /tmp/md_analysis.json
+```
+
+**常见问题**：
+- 文档数 < 3 篇时，工具会在摘要中自动提示，建议补充更多文档
+- 支持多路径输入：`--input a.md b.md ./docs/`
+- 目录不递归时加 `--no-recursive`
+- 自动处理 UTF-8 / UTF-8-BOM / GBK / GB18030 / Big5 编码
+
+---
+
 如果用户说"没有文件"或"跳过"，仅凭 Step 1 的手动信息生成 Skill。
 
 ### Step 3：分析原材料
 
-将收集到的所有原材料和用户填写的基础信息汇总，按以下两条线分析：
+将收集到的所有原材料和用户填写的基础信息汇总，按以下三条线分析：
 
 **线路 A（知识与能力）**：
 - 参考 `${SKILL_DIR}/prompts/work_analyzer.md` 中的提取维度
@@ -210,10 +248,18 @@ Read /tmp/txt_parsed.txt
 - 将用户填写的标签翻译为具体行为规则（参见标签翻译表）
 - 从原材料中提取：表达习惯、决策模式、人际行为
 
+**线路 C（文档写作风格）**：
+- 仅在用户通过方式 C 导入了 Markdown 文档时触发
+- 参考 `${SKILL_DIR}/prompts/doc_style_analyzer.md` 中的分析维度
+- 输入：`markdown_parser.py --summary` 的输出 + 原始 Markdown 文档内容
+- 提取：文章结构偏好、格式习惯、信息密度、语气风格、典型句式
+- 分析结果将写入 `work.md` 的"文档写作风格"区块（参见 `doc_style_builder.md`）
+
 ### Step 4：生成并预览
 
 参考 `${SKILL_DIR}/prompts/work_builder.md` 生成知识与能力内容。
 参考 `${SKILL_DIR}/prompts/persona_builder.md` 生成说话风格内容（5 层结构）。
+若有 Markdown 文档语料，参考 `${SKILL_DIR}/prompts/doc_style_builder.md` 生成文档写作风格区块。
 
 向用户展示摘要（各 5-8 行），询问：
 ```
@@ -227,6 +273,13 @@ Read /tmp/txt_parsed.txt
   - 核心特点：{xxx}
   - 表达习惯：{xxx}
   - 决策模式：{xxx}
+  ...
+
+{若有 Markdown 文档语料：}
+文档写作风格摘要：
+  - 文章结构：{xxx}
+  - 格式偏好：{xxx}
+  - 典型开篇：{xxx}
   ...
 
 确认生成？还是需要调整？
@@ -273,6 +326,7 @@ mkdir -p shadows/{slug}/input/{正式/日常/专业}
   },
   "impression": "{自我印象}",
   "knowledge_sources": [...已导入文件列表],
+  "markdown_sources": [...已导入 Markdown 文档列表，无则为空数组],
   "relation_sources": {
     "superior": [...跟领导的聊天文件],
     "peer": [...跟平级的聊天文件],
@@ -328,9 +382,18 @@ user-invocable: true
 ### 写文章
 
 收到写作任务时：
-- 按照 PART A 的「写作习惯」和「输出格式偏好」来组织内容
-- 用 PART B Layer 2 的表达风格和口吻写作
+- 参考 `${SKILL_DIR}/prompts/doc_generator.md` 中的风格约束执行
+- 若 work.md 有"文档写作风格"区块：严格按照其中的结构、格式、句式约束生成
+- 若无该区块：按照 PART A 的「写作习惯」和「输出格式偏好」生成
+- 全程用 PART B Layer 2 的表达风格和口吻
 - 结构、例子、观点风格都要像你
+
+**触发写作模式的用户输入**（包括但不限于）：
+- 帮我写一篇关于 `{主题}` 的文章
+- 写个 `{主题}` 的技术文档 / 教程
+- 用你的风格写篇 `{主题}` 的文章
+- 仿照你的写法写一篇关于 `{主题}` 的
+- 以你的口吻写一篇
 ```
 
 **6. 初始化习惯追踪档案**（用 Bash）：
@@ -359,17 +422,20 @@ python3 ${SKILL_DIR}/tools/habit_manager.py init \
 
 用户提供新文件或文本时：
 
-1. 按 Step 2 的方式读取新内容，**同样询问场景类型**（正式/日常/专业）
+1. 按 Step 2 的方式读取新内容
+   - 若是 TXT 聊天记录：**同样询问场景类型**（正式/日常/专业）
+   - 若是 Markdown 文档：调用 `markdown_parser.py --summary` 生成摘要，进入线路 C 增量分析
 2. 用 `Read` 读取现有 `shadows/{slug}/work.md` 和 `persona.md`
 3. 读取 `shadows/{slug}/meta.json`，查看 `relation_sources`，判断哪种场景类型目前**尚无**原材料——如有缺失，在更新 persona 时重点补充该场景下的风格描述
 4. 参考 `${SKILL_DIR}/prompts/merger.md` 分析增量内容
+   - 若新内容为 Markdown 文档，同时执行 Step 3b（文档写作风格区块增量更新）
 5. 存档当前版本（用 Bash）：
    ```bash
    python3 ${SKILL_DIR}/tools/version_manager.py --action backup --slug {slug} --base-dir ./shadows
    ```
 6. 用 `Edit` 工具追加增量内容到对应文件
 7. 重新生成 `SKILL.md`（合并最新 work.md + persona.md）
-8. 更新 `meta.json` 的 version、updated_at 以及 `relation_sources`（追加新来源文件）
+8. 更新 `meta.json` 的 version、updated_at、`relation_sources`，以及 `markdown_sources`（若有新增 Markdown 文档）
 9. 扫描聊天记录，更新习惯活跃状态（用 Bash）：
    ```bash
    python3 ${SKILL_DIR}/tools/habit_manager.py scan \
@@ -492,6 +558,7 @@ This Skill is compatible with Claude Code, OpenCode, Codex CLI, and similar AI c
 | Read image screenshots | `Read` / `read_file` tool |
 | Read MD/TXT files | `Read` / `read_file` tool |
 | Parse TXT chat logs (recommended) | `Bash` → `python3 ${SKILL_DIR}/tools/txt_parser.py` |
+| Parse local Markdown documents | `Bash` → `python3 ${SKILL_DIR}/tools/markdown_parser.py` |
 | Write/update Skill files | `Write` / `write_file` / `Edit` tool |
 | Version management | `Bash` → `python3 ${SKILL_DIR}/tools/version_manager.py` |
 | List existing Skills | `Bash` → `python3 ${SKILL_DIR}/tools/skill_writer.py --action list` |
@@ -530,6 +597,10 @@ How would you like to provide source materials?
   [B] Paste Text
       Paste text directly (good for articles, notes, small amounts of text)
 
+  [C] Import local Markdown documents (articles / notes / technical docs)
+      Provide .md files or a directory you've written; auto-analyze your document writing style
+      Results are used by the shadow clone when generating articles in your style
+
 Can mix and match, or skip entirely (generate from manual info only).
 ```
 
@@ -567,9 +638,42 @@ User-pasted content (articles, notes, chat excerpts) is used directly. No tools 
 
 ---
 
+#### Option C: Import Local Markdown Documents
+
+**Supported formats**: `.md` / `.markdown` files (single file or directory; directories are scanned recursively by default)
+
+**Steps**:
+
+1. User provides Markdown file path(s) or directory
+
+2. **Parse document structure**:
+```bash
+python3 ${SKILL_DIR}/tools/markdown_parser.py \
+  --input {path_or_dir} \
+  --summary
+```
+> Output: A human-readable writing style summary for LLM analysis
+
+3. Read the summary output, then proceed to **Track C (Document Writing Style)** in Step 3.
+
+4. Optionally export full JSON details:
+```bash
+python3 ${SKILL_DIR}/tools/markdown_parser.py \
+  --input {path_or_dir} \
+  --output /tmp/md_analysis.json
+```
+
+**Notes**:
+- If fewer than 3 documents are provided, the tool will warn in the summary
+- Multiple paths supported: `--input a.md b.md ./docs/`
+- Disable recursive scanning: `--no-recursive`
+- Encoding auto-detection: UTF-8, GBK, GB18030, Big5
+
+---
+
 ### Step 3: Analyze Source Material
 
-Analyze all collected materials along two tracks:
+Analyze all collected materials along three tracks:
 
 **Track A (Knowledge & Capabilities)**:
 - Refer to `${SKILL_DIR}/prompts/work_analyzer.md`
@@ -580,10 +684,18 @@ Analyze all collected materials along two tracks:
 - Translate tags into concrete behavior rules
 - Extract: expression habits, decision patterns, interpersonal behavior
 
+**Track C (Document Writing Style)**:
+- Only triggered when the user imports Markdown documents via Option C
+- Refer to `${SKILL_DIR}/prompts/doc_style_analyzer.md`
+- Input: `markdown_parser.py --summary` output + raw Markdown content
+- Extract: structure preferences, format habits, information density, tone, typical sentence patterns
+- Results are written to the "Document Writing Style" section in `work.md`
+
 ### Step 4: Generate and Preview
 
 Use `${SKILL_DIR}/prompts/work_builder.md` for knowledge content.
 Use `${SKILL_DIR}/prompts/persona_builder.md` for style content (5-layer structure).
+If Markdown documents were imported, use `${SKILL_DIR}/prompts/doc_style_builder.md` for the document writing style section.
 
 Show user a summary and ask for confirmation.
 
@@ -610,9 +722,13 @@ If something feels off, just say "I wouldn't do that" and I'll update it.
 When user provides new files or text:
 
 1. Read new content using Step 2 methods
+   - If TXT chat logs: ask for relation type (formal / casual / professional)
+   - If Markdown documents: run `markdown_parser.py --summary`, proceed with Track C incremental analysis
 2. `Read` existing `shadows/{slug}/work.md` and `persona.md`
 3. Refer to `${SKILL_DIR}/prompts/merger.md` for incremental analysis
-4. Archive current version, apply edits, regenerate `SKILL.md`, update `meta.json`
+   - If new content is Markdown documents, also execute Step 3b (document style section incremental update)
+4. Archive current version, apply edits, regenerate `SKILL.md`
+5. Update `meta.json`: version, updated_at, `relation_sources`, and `markdown_sources` (if new Markdown files added)
 
 ---
 
