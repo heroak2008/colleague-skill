@@ -15,6 +15,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tools.txt_parser import (
     _parse_lines,
+    _expand_paths,
+    _interactive_assign_relations,
+    _apply_file_relations,
     parse_file,
     parse_paths,
     get_speakers,
@@ -598,3 +601,213 @@ class TestRelationField:
         assert out.exists()
         content = out.read_text(encoding="utf-8")
         assert "跟领导的对话" in content
+
+
+# ─── _expand_paths 测试 ────────────────────────────────────────────────────────
+
+class TestExpandPaths:
+    def test_single_file(self, tmp_path):
+        f = tmp_path / "chat.txt"
+        f.write_text("张三：消息\n", encoding="utf-8")
+        result = _expand_paths([str(f)])
+        assert result == [f]
+
+    def test_multiple_files(self, tmp_path):
+        f1 = tmp_path / "a.txt"
+        f2 = tmp_path / "b.txt"
+        f1.write_text("张三：消息\n", encoding="utf-8")
+        f2.write_text("李四：消息\n", encoding="utf-8")
+        result = _expand_paths([str(f1), str(f2)])
+        assert len(result) == 2
+        assert f1 in result
+        assert f2 in result
+
+    def test_directory_recursive(self, tmp_path):
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        (tmp_path / "a.txt").write_text("张三：顶层\n", encoding="utf-8")
+        (sub / "b.txt").write_text("李四：子目录\n", encoding="utf-8")
+        result = _expand_paths([str(tmp_path)], recursive=True)
+        names = {p.name for p in result}
+        assert "a.txt" in names
+        assert "b.txt" in names
+
+    def test_directory_non_recursive(self, tmp_path):
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        (tmp_path / "a.txt").write_text("张三：顶层\n", encoding="utf-8")
+        (sub / "b.txt").write_text("李四：子目录\n", encoding="utf-8")
+        result = _expand_paths([str(tmp_path)], recursive=False)
+        names = {p.name for p in result}
+        assert "a.txt" in names
+        assert "b.txt" not in names
+
+    def test_deduplication(self, tmp_path):
+        f = tmp_path / "chat.txt"
+        f.write_text("张三：消息\n", encoding="utf-8")
+        result = _expand_paths([str(f), str(f)])
+        assert len(result) == 1
+
+    def test_nonexistent_path_warning(self, tmp_path, capsys):
+        result = _expand_paths([str(tmp_path / "nonexistent.txt")])
+        captured = capsys.readouterr()
+        assert result == []
+        assert "不存在" in captured.err
+
+
+# ─── _interactive_assign_relations 测试 ───────────────────────────────────────
+
+class TestInteractiveAssignRelations:
+    """使用 monkeypatch 模拟用户在交互式关系选择中的输入。"""
+
+    def test_assign_superior(self, tmp_path, monkeypatch):
+        f = tmp_path / "boss.txt"
+        f.write_text("张三：汇报进展\n", encoding="utf-8")
+        monkeypatch.setattr("builtins.input", lambda _: "1")
+        results = _interactive_assign_relations([f])
+        assert len(results) == 1
+        assert results[0] == (f, "superior")
+
+    def test_assign_peer(self, tmp_path, monkeypatch):
+        f = tmp_path / "peer.txt"
+        f.write_text("李四：讨论方案\n", encoding="utf-8")
+        monkeypatch.setattr("builtins.input", lambda _: "2")
+        results = _interactive_assign_relations([f])
+        assert results[0] == (f, "peer")
+
+    def test_assign_junior(self, tmp_path, monkeypatch):
+        f = tmp_path / "junior.txt"
+        f.write_text("王五：请教问题\n", encoding="utf-8")
+        monkeypatch.setattr("builtins.input", lambda _: "3")
+        results = _interactive_assign_relations([f])
+        assert results[0] == (f, "junior")
+
+    def test_skip_file(self, tmp_path, monkeypatch):
+        f = tmp_path / "unknown.txt"
+        f.write_text("赵六：未知关系\n", encoding="utf-8")
+        monkeypatch.setattr("builtins.input", lambda _: "s")
+        results = _interactive_assign_relations([f])
+        assert results[0] == (f, None)
+
+    def test_invalid_then_valid_input(self, tmp_path, monkeypatch):
+        f = tmp_path / "chat.txt"
+        f.write_text("张三：消息\n", encoding="utf-8")
+        responses = iter(["x", "bad", "2"])
+        monkeypatch.setattr("builtins.input", lambda _: next(responses))
+        results = _interactive_assign_relations([f])
+        assert results[0] == (f, "peer")
+
+    def test_empty_file_skipped(self, tmp_path, monkeypatch):
+        f = tmp_path / "empty.txt"
+        f.write_text("", encoding="utf-8")
+        monkeypatch.setattr("builtins.input", lambda _: "1")
+        results = _interactive_assign_relations([f])
+        assert results[0] == (f, None)
+
+    def test_multiple_files_different_relations(self, tmp_path, monkeypatch):
+        f1 = tmp_path / "boss.txt"
+        f2 = tmp_path / "peer.txt"
+        f3 = tmp_path / "junior.txt"
+        f1.write_text("张三：汇报\n", encoding="utf-8")
+        f2.write_text("李四：协作\n", encoding="utf-8")
+        f3.write_text("王五：被指导\n", encoding="utf-8")
+        responses = iter(["1", "2", "3"])
+        monkeypatch.setattr("builtins.input", lambda _: next(responses))
+        results = _interactive_assign_relations([f1, f2, f3])
+        assert results[0] == (f1, "superior")
+        assert results[1] == (f2, "peer")
+        assert results[2] == (f3, "junior")
+
+    def test_relation_field_set_on_messages(self, tmp_path, monkeypatch):
+        """验证分配关系后消息的 relation 字段正确设置。"""
+        f = tmp_path / "boss.txt"
+        f.write_text("张三：汇报进展\n张三：已完成\n", encoding="utf-8")
+        monkeypatch.setattr("builtins.input", lambda _: "1")
+        file_relations = _interactive_assign_relations([f])
+        all_messages = _apply_file_relations(file_relations)
+        assert all(m["relation"] == "superior" for m in all_messages)
+
+    def test_skipped_file_no_relation_field(self, tmp_path, monkeypatch):
+        """选择跳过（s）时，消息不应附加 relation 字段。"""
+        f = tmp_path / "unknown.txt"
+        f.write_text("张三：消息\n", encoding="utf-8")
+        monkeypatch.setattr("builtins.input", lambda _: "s")
+        file_relations = _interactive_assign_relations([f])
+        all_messages = _apply_file_relations(file_relations)
+        assert len(all_messages) == 1
+        assert "relation" not in all_messages[0]
+
+
+# ─── 多文件 CLI 集成测试（交互式关系分配）─────────────────────────────────────
+
+class TestMultiFileCLIRelationAssignment:
+    """通过 subprocess + stdin 管道验证多文件时的交互式关系分配流程。"""
+
+    def test_multi_file_stdin_assigns_relations(self, tmp_path):
+        """多文件 + --relation 统一指定时，输出按关系分段（验证端到端关系注入）。"""
+        import subprocess
+
+        f1 = tmp_path / "boss.txt"
+        f2 = tmp_path / "peer.txt"
+        f1.write_text("张三：汇报进展，领导好\n", encoding="utf-8")
+        f2.write_text("张三：跟同级讨论方案\n", encoding="utf-8")
+        out = tmp_path / "out.txt"
+
+        # 非交互模式：通过 --relation 统一指定；单文件分别调用确认按关系分段
+        result = subprocess.run(
+            [sys.executable, "tools/txt_parser.py",
+             "--input", str(f1), str(f2),
+             "--target", "张三",
+             "--relation", "superior",
+             "--output", str(out)],
+            capture_output=True,
+            text=True,
+            cwd=str(Path(__file__).parent.parent),
+        )
+        assert result.returncode == 0
+        assert out.exists()
+        content = out.read_text(encoding="utf-8")
+        assert "跟领导的对话" in content
+
+    def test_single_file_no_interactive_relation_prompt(self, tmp_path):
+        """单个文件时不触发交互式关系选择（直接由 --target 和 --relation 控制）。"""
+        import subprocess
+
+        f = tmp_path / "chat.txt"
+        f.write_text("张三：消息\n", encoding="utf-8")
+        out = tmp_path / "out.txt"
+
+        result = subprocess.run(
+            [sys.executable, "tools/txt_parser.py",
+             "--input", str(f),
+             "--target", "张三",
+             "--output", str(out)],
+            capture_output=True,
+            text=True,
+            cwd=str(Path(__file__).parent.parent),
+        )
+        assert result.returncode == 0
+
+    def test_multi_file_with_explicit_relation_skips_interactive(self, tmp_path):
+        """指定 --relation 时，多文件不触发交互式逐文件关系选择。"""
+        import subprocess
+
+        f1 = tmp_path / "a.txt"
+        f2 = tmp_path / "b.txt"
+        f1.write_text("张三：消息1\n", encoding="utf-8")
+        f2.write_text("张三：消息2\n", encoding="utf-8")
+        out = tmp_path / "out.txt"
+
+        result = subprocess.run(
+            [sys.executable, "tools/txt_parser.py",
+             "--input", str(f1), str(f2),
+             "--target", "张三",
+             "--relation", "peer",
+             "--output", str(out)],
+            capture_output=True,
+            text=True,
+            cwd=str(Path(__file__).parent.parent),
+        )
+        assert result.returncode == 0
+        content = out.read_text(encoding="utf-8")
+        assert "跟同级的对话" in content
