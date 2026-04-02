@@ -7,6 +7,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://python.org)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Skill-blueviolet)](https://claude.ai/code)
+[![OpenCode](https://img.shields.io/badge/OpenCode-Compatible-blue)](https://github.com/sst/opencode)
+[![Codex CLI](https://img.shields.io/badge/Codex%20CLI-Compatible-green)](https://github.com/openai/codex)
 [![AgentSkills](https://img.shields.io/badge/AgentSkills-Standard-green)](https://agentskills.io)
 
 <br>
@@ -87,17 +89,33 @@ These are independent open-source projects — this project does not include the
 ```bash
 # Install to current project (run at git repo root)
 mkdir -p .claude/skills
-git clone https://github.com/titanwings/colleague-skill .claude/skills/create-colleague
+git clone https://github.com/heroak2008/colleague-skill .claude/skills/create-colleague
 
 # Or install globally (available in all projects)
-git clone https://github.com/titanwings/colleague-skill ~/.claude/skills/create-colleague
+git clone https://github.com/heroak2008/colleague-skill ~/.claude/skills/create-colleague
 ```
 
-### OpenClaw
+### OpenCode
 
 ```bash
-git clone https://github.com/titanwings/colleague-skill ~/.openclaw/workspace/skills/create-colleague
+mkdir -p ~/.opencode/skills
+git clone https://github.com/heroak2008/colleague-skill ~/.opencode/skills/create-colleague
+# Set the skill directory variable (if not injected by the platform)
+echo 'export SKILL_DIR="$HOME/.opencode/skills/create-colleague"' >> ~/.bashrc && source ~/.bashrc
 ```
+
+### Codex CLI (OpenAI Codex)
+
+```bash
+mkdir -p ~/.codex/skills
+git clone https://github.com/heroak2008/colleague-skill ~/.codex/skills/create-colleague
+# Set the skill directory variable and API key
+echo 'export SKILL_DIR="$HOME/.codex/skills/create-colleague"' >> ~/.bashrc
+echo 'export OPENAI_API_KEY="sk-your-key-here"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+See [AGENTS.md](AGENTS.md) for full Codex setup instructions.
 
 ### Dependencies (optional)
 
@@ -111,7 +129,13 @@ pip3 install -r requirements.txt
 
 ## Usage
 
-In Claude Code, type:
+In Claude Code or OpenCode, type:
+
+```
+/create-colleague
+```
+
+In Codex CLI, load `AGENTS.md` as your system instructions, then type:
 
 ```
 /create-colleague
