@@ -1,16 +1,16 @@
-# 同事.skill —— 产品需求文档 v2.0
+# 影分身.skill —— 产品需求文档 v2.0
 
 ---
 
 ## 一、产品概述
 
-**同事.skill** 是一个运行在 OpenClaw 上的 meta-skill。
+**影分身.skill** 是一个运行在 OpenClaw 上的 meta-skill。
 
-用户通过对话式交互提供原材料（文件 + 手动描述），系统自动生成一个可独立运行的**同事 Persona Skill**。
+用户通过对话式交互提供原材料（文件 + 手动描述），系统自动生成一个可独立运行的**影分身 Skill**。
 
 生成的 Skill 由两个独立部分组成：
-- **Part A — Work Skill**：该同事的技术能力与工作方法，能实际完成工作任务
-- **Part B — Persona**：该同事的性格、沟通风格、行为模式
+- **Part A — 知识与能力**：你的技术能力与工作方法，能实际完成工作任务
+- **Part B — 说话风格**：你的说话风格、表达习惯、行为模式
 
 两部分可以独立使用，也可以组合运行（默认组合）。生成后的 Skill 支持通过追加文件或对话纠正持续进化。
 
@@ -19,12 +19,11 @@
 ## 二、用户流程
 
 ```
-用户触发 /create-colleague
+用户触发 /create-shadow
         ↓
 [Step 1] 基础信息录入（全部可跳过）
-  - 姓名/代号
-  - 公司 + 职级 + 职位
-  - 性别
+  - 影分身代号
+  - 职业 + 领域 + 方向
   - MBTI
   - 个性标签（多选）
   - 企业文化标签（多选）
@@ -43,7 +42,7 @@
   - 用户可直接确认或修改
         ↓
 [Step 5] 写入文件，立即可用
-  - 生成 ~/.openclaw/workspace/skills/colleagues/{slug}/
+  - 生成 ~/.openclaw/workspace/skills/shadows/{slug}/
   - 包含 SKILL.md（完整组合版）
   - 包含 work.md 和 persona.md（独立部分）
         ↓
@@ -60,7 +59,7 @@
 ### 3.1 基础信息字段
 
 ```yaml
-name:        同事姓名/代号               # 必填，用于生成 slug 和称谓
+name:        影分身代号                  # 必填，用于生成 slug 和称谓
 company:     公司名称                    # 可选，如：阿里 / 字节 / 腾讯 / 百度 / 美团
 level:       职级                       # 可选，如：P7 / 3-1 / T3-2 / L6 / 高级
 role:        职位名称                   # 可选，如：算法工程师 / 产品经理 / 前端工程师
@@ -125,9 +124,9 @@ impression:  ""                        # 可选，自由文本，你对他的主
 
 ## 五、生成内容规范
 
-### 5.1 Part A — Work Skill（工作能力部分）
+### 5.1 Part A — 知识与能力（工作能力部分）
 
-从文件中提取该同事的**实际工作方法和技术能力**，使生成的 Skill 能真正完成工作任务。
+从文件中提取你的**实际工作方法和技术能力**，使生成的 Skill 能真正完成工作任务。
 
 **提取维度：**
 
@@ -160,9 +159,9 @@ impression:  ""                        # 可选，自由文本，你对他的主
 
 ---
 
-### 5.2 Part B — Persona（人物性格部分）
+### 5.2 Part B — 说话风格（人物性格部分）
 
-从文件 + 手动标签共同构建该同事的**行为模式和沟通风格**。
+从文件 + 手动标签共同构建你的**行为模式和沟通风格**。
 
 **分层结构（优先级从高到低）：**
 
@@ -236,7 +235,7 @@ Layer 5 — Correction 层（对话纠正追加，滚动更新）
 ### 6.2 对话纠正进化
 
 ```
-用户: "这不对，他不会这样说"
+用户: "这不对，我不会这样说"
 用户: "他遇到这种情况会直接甩给 XX 组"
 用户: "他写代码从来不写注释"
         ↓
@@ -252,7 +251,7 @@ Layer 5 — Correction 层（对话纠正追加，滚动更新）
 ### 6.3 版本管理
 
 - 每次更新自动存档当前版本到 `versions/`
-- 支持 `/colleague-rollback {slug} {version}` 回滚
+- 支持 `/shadow-rollback {slug} {version}` 回滚
 - 保留最近 10 个版本
 
 ---
@@ -262,11 +261,11 @@ Layer 5 — Correction 层（对话纠正追加，滚动更新）
 ```
 ~/.openclaw/workspace/skills/
 │
-├── create-colleague/                    # meta-skill：同事skill创建器
+├── create-shadow/                    # meta-skill：影分身skill创建器
 │   │
 │   ├── SKILL.md                          # 主入口
-│   │                                     # 触发词: /create-colleague
-│   │                                     # 描述: 创建一个同事的 Persona + Work Skill
+│   │                                     # 触发词: /create-shadow
+│   │                                     # 描述: 创建你自己的影分身 Skill
 │   │
 │   ├── prompts/                          # Prompt 模板（不执行，供 SKILL.md 引用）
 │   │   ├── intake.md                     # 引导用户录入基础信息的对话脚本
@@ -282,18 +281,18 @@ Layer 5 — Correction 层（对话纠正追加，滚动更新）
 │       ├── skill_writer.py               # 写入/更新生成的 Skill 文件
 │       └── version_manager.py            # 版本存档与回滚
 │
-└── colleagues/                           # 生成的同事 Skills 存放处
+└── shadows/                           # 生成的影分身 Skills 存放处
     │
-    └── {colleague_slug}/                 # 每个同事一个目录，slug = 姓名拼音或自定义
+    └── {shadow_slug}/                 # 每个影分身一个目录，slug = 姓名拼音或自定义
         │
         ├── SKILL.md                      # 完整组合版，可直接运行
-        │                                 # 触发词: /{colleague_slug}
+        │                                 # 触发词: /{shadow_slug}
         │
         ├── work.md                       # Part A：工作能力（可独立运行）
-        │                                 # 触发词: /{colleague_slug}-work
+        │                                 # 触发词: /{shadow_slug}-work
         │
         ├── persona.md                    # Part B：人物性格（可独立运行）
-        │                                 # 触发词: /{colleague_slug}-persona
+        │                                 # 触发词: /{shadow_slug}-persona
         │
         ├── meta.json                     # 元数据
         │                                 # 包含：创建时间、版本号、原材料清单、
@@ -317,7 +316,7 @@ Layer 5 — Correction 层（对话纠正追加，滚动更新）
 
 ## 八、关键文件格式
 
-### `colleagues/{slug}/meta.json`
+### `shadows/{slug}/meta.json`
 
 ```json
 {
@@ -345,11 +344,11 @@ Layer 5 — Correction 层（对话纠正追加，滚动更新）
 }
 ```
 
-### `colleagues/{slug}/SKILL.md` 结构
+### `shadows/{slug}/SKILL.md` 结构
 
 ```markdown
 ---
-name: colleague_{slug}
+name: shadow-{slug}
 description: {name}，{company} {level} {role}
 user-invocable: true
 ---
@@ -385,7 +384,7 @@ user-invocable: true
 ## 九、实现优先级
 
 ### P0 — MVP（先跑通主流程）
-- [ ] `create-colleague/SKILL.md` 主流程
+- [ ] `create-shadow/SKILL.md` 主流程
 - [ ] `prompts/intake.md` 基础信息录入
 - [ ] `prompts/work_analyzer.md` + `work_builder.md`
 - [ ] `prompts/persona_analyzer.md` + `persona_builder.md`
@@ -398,9 +397,9 @@ user-invocable: true
 - [ ] `tools/version_manager.py` 版本管理
 
 ### P2 — 管理功能
-- [ ] `/list-colleagues` 列出所有同事 Skill
-- [ ] `/colleague-rollback {slug} {version}` 回滚
-- [ ] `/delete-colleague {slug}` 删除
+- [ ] `/list-shadows` 列出所有影分身 Skill
+- [ ] `/shadow-rollback {slug} {version}` 回滚
+- [ ] `/delete-shadow {slug}` 删除
 
 ### P3 — 扩展数据接入（待后续迭代）
 - [ ] PDF 文档导入
