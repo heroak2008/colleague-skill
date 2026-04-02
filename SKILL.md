@@ -1,6 +1,6 @@
 ---
 name: create-colleague
-description: "Distill a colleague into an AI Skill. Auto-collect Feishu/DingTalk data, generate Work Skill + Persona, with continuous evolution. | 把同事蒸馏成 AI Skill，自动采集飞书/钉钉数据，生成 Work + Persona，支持持续进化。"
+description: "Distill a colleague into an AI Skill from TXT chat logs or manual input, generate Work Skill + Persona, with continuous evolution. | 把同事蒸馏成 AI Skill，支持 TXT 聊天记录导入或手动描述，生成 Work + Persona，支持持续进化。"
 argument-hint: "[colleague-name-or-slug]"
 version: "1.1.0"
 user-invocable: true
@@ -63,12 +63,7 @@ allowed-tools: Read, Write, Edit, Bash, computer
 | 读取 PDF 文档 | `Read` / `read_file` 工具（原生支持 PDF） |
 | 读取图片截图 | `Read` / `read_file` 工具（原生支持图片） |
 | 读取 MD/TXT 文件 | `Read` / `read_file` 工具 |
-| 解析飞书消息 JSON 导出 | `Bash` → `python3 ${SKILL_DIR}/tools/feishu_parser.py` |
-| 飞书全自动采集（推荐） | `Bash` → `python3 ${SKILL_DIR}/tools/feishu_auto_collector.py` |
-| 飞书文档（浏览器登录态） | `Bash` → `python3 ${SKILL_DIR}/tools/feishu_browser.py` |
-| 飞书文档（MCP App Token） | `Bash` → `python3 ${SKILL_DIR}/tools/feishu_mcp_client.py` |
-| 钉钉全自动采集 | `Bash` → `python3 ${SKILL_DIR}/tools/dingtalk_auto_collector.py` |
-| 解析邮件 .eml/.mbox | `Bash` → `python3 ${SKILL_DIR}/tools/email_parser.py` |
+| 解析 TXT 聊天记录（推荐） | `Bash` → `python3 ${SKILL_DIR}/tools/txt_parser.py` |
 | 写入/更新 Skill 文件 | `Write` / `write_file` / `Edit` 工具 |
 | 版本管理 | `Bash` → `python3 ${SKILL_DIR}/tools/version_manager.py` |
 | 列出已有 Skill | `Bash` → `python3 ${SKILL_DIR}/tools/skill_writer.py --action list` |
@@ -94,172 +89,67 @@ allowed-tools: Read, Write, Edit, Bash, computer
 
 ### Step 2：原材料导入
 
-询问用户提供原材料，展示四种方式供选择：
+询问用户提供原材料，展示两种方式供选择：
 
 ```
 原材料怎么提供？
 
-  [A] 飞书自动采集（推荐）
-      输入姓名，自动拉取消息记录 + 文档 + 多维表格
+  [A] 导入 TXT 聊天记录（推荐）
+      提供聊天记录文件或目录，自动解析并提取目标同事的发言
+      支持多文件、多人对话，自动过滤噪声消息
 
-  [B] 钉钉自动采集
-      输入姓名，自动拉取文档 + 多维表格
-      消息记录通过浏览器采集（钉钉 API 不支持历史消息）
-
-  [C] 飞书链接
-      直接给文档/Wiki 链接（浏览器登录态 或 MCP）
-
-  [D] 上传文件
-      PDF / 图片 / 导出 JSON / 邮件 .eml
-
-  [E] 直接粘贴内容
-      把文字复制进来
+  [B] 直接粘贴内容
+      把文字复制进来（适合少量文本）
 
 可以混用，也可以跳过（仅凭手动信息生成）。
 ```
 
 ---
 
-#### 方式 A：飞书自动采集（推荐）
+#### 方式 A：导入 TXT 聊天记录（推荐）
 
-首次使用需配置：
+**支持的 TXT 格式**（混用也可以）：
+- 格式 1：`2024-01-01 10:00:00 张三：消息内容`
+- 格式 2：`2024-01-01 张三：消息内容`
+- 格式 3（微信导出式）：时间单独一行 / 发送人单独一行 / 内容另起一行
+- 格式 4：`张三：消息内容`（无时间戳）
+- 格式 5：`**张三**: 消息内容`（Markdown 加粗）
+- 格式 6（企业工号式）：`张三(z00611745)<TAB>2026-01-04 15:58:23` / 内容另起一行
+
+**步骤**：
+
+1. 用户提供文件路径或目录路径
+
+2. **列出说话人**（可选，帮用户确认目标姓名）：
 ```bash
-python3 ${SKILL_DIR}/tools/feishu_auto_collector.py --setup
+python3 ${SKILL_DIR}/tools/txt_parser.py \
+  --input {path_or_dir} \
+  --list-speakers
 ```
 
-配置完成后，只需输入姓名，自动完成所有采集：
+3. **提取目标人消息**：
 ```bash
-python3 ${SKILL_DIR}/tools/feishu_auto_collector.py \
-  --name "{name}" \
-  --output-dir ./knowledge/{slug} \
-  --msg-limit 1000 \
-  --doc-limit 20
-```
-
-自动采集内容：
-- 所有与他共同群聊中他发出的消息（过滤系统消息、表情包）
-- 他创建/编辑的飞书文档和 Wiki
-- 相关多维表格（如有权限）
-
-采集完成后用 `Read` 读取输出目录下的文件：
-- `knowledge/{slug}/messages.txt` → 消息记录
-- `knowledge/{slug}/docs.txt` → 文档内容
-- `knowledge/{slug}/collection_summary.json` → 采集摘要
-
-如果采集失败（权限不足 / bot 未加群），告知用户需要：
-1. 将飞书 App bot 添加到相关群聊
-2. 或改用方式 B/C
-
----
-
-#### 方式 B：钉钉自动采集
-
-首次使用需配置：
-```bash
-python3 ${SKILL_DIR}/tools/dingtalk_auto_collector.py --setup
-```
-
-然后输入姓名，一键采集：
-```bash
-python3 ${SKILL_DIR}/tools/dingtalk_auto_collector.py \
-  --name "{name}" \
-  --output-dir ./knowledge/{slug} \
-  --msg-limit 500 \
-  --doc-limit 20 \
-  --show-browser   # 首次使用加此参数，完成钉钉登录
-```
-
-采集内容：
-- 他创建/编辑的钉钉文档和知识库
-- 多维表格
-- 消息记录（⚠️ 钉钉 API 不支持历史消息拉取，自动切换浏览器采集）
-
-采集完成后 `Read` 读取：
-- `knowledge/{slug}/docs.txt`
-- `knowledge/{slug}/bitables.txt`
-- `knowledge/{slug}/messages.txt`
-
-如消息采集失败，提示用户截图聊天记录后上传。
-
----
-
-#### 方式 C：上传文件
-
-- **PDF / 图片**：`Read` 工具直接读取
-- **飞书消息 JSON 导出**：
-  ```bash
-  python3 ${SKILL_DIR}/tools/feishu_parser.py --file {path} --target "{name}" --output /tmp/feishu_out.txt
-  ```
-  然后 `Read /tmp/feishu_out.txt`
-- **邮件文件 .eml / .mbox**：
-  ```bash
-  python3 ${SKILL_DIR}/tools/email_parser.py --file {path} --target "{name}" --output /tmp/email_out.txt
-  ```
-  然后 `Read /tmp/email_out.txt`
-- **Markdown / TXT**：`Read` 工具直接读取
-
----
-
-#### 方式 B：飞书链接
-
-用户提供飞书文档/Wiki 链接时，询问读取方式：
-
-```
-检测到飞书链接，选择读取方式：
-
-  [1] 浏览器方案（推荐）
-      复用你本机 Chrome 的登录状态
-      ✅ 内部文档、需要权限的文档都能读
-      ✅ 无需配置 token
-      ⚠️  需要本机安装 Chrome + playwright
-
-  [2] MCP 方案
-      通过飞书 App Token 调用官方 API
-      ✅ 稳定，不依赖浏览器
-      ✅ 可以读消息记录（需要群聊 ID）
-      ⚠️  需要先配置 App ID / App Secret
-      ⚠️  内部文档需要管理员给应用授权
-
-选择 [1/2]：
-```
-
-**选 1（浏览器方案）**：
-```bash
-python3 ${SKILL_DIR}/tools/feishu_browser.py \
-  --url "{feishu_url}" \
+python3 ${SKILL_DIR}/tools/txt_parser.py \
+  --input {path_or_dir} \
   --target "{name}" \
-  --output /tmp/feishu_doc_out.txt
+  --output /tmp/txt_parsed.txt
 ```
-首次使用若未登录，会弹出浏览器窗口要求登录（一次性）。
+支持多个路径：`--input chat1.txt chat2.txt ./chats/`
+支持不递归目录：`--no-recursive`
 
-**选 2（MCP 方案）**：
-
-首次使用需初始化配置：
-```bash
-python3 ${SKILL_DIR}/tools/feishu_mcp_client.py --setup
+4. 读取提取结果：
 ```
-
-之后直接读取：
-```bash
-python3 ${SKILL_DIR}/tools/feishu_mcp_client.py \
-  --url "{feishu_url}" \
-  --output /tmp/feishu_doc_out.txt
+Read /tmp/txt_parsed.txt
 ```
 
-读取消息记录（需要群聊 ID，格式 `oc_xxx`）：
-```bash
-python3 ${SKILL_DIR}/tools/feishu_mcp_client.py \
-  --chat-id "oc_xxx" \
-  --target "{name}" \
-  --limit 500 \
-  --output /tmp/feishu_msg_out.txt
-```
-
-两种方式输出后均用 `Read` 读取结果文件，进入分析流程。
+**常见问题**：
+- 如果目标同事消息数 < 10，工具会自动提示，建议补充更多记录或结合手动描述
+- 如果找不到目标姓名，先用 `--list-speakers` 查看文件中实际的说话人名称
+- 乱码/编码问题：工具自动尝试 UTF-8 / GBK / GB18030 / Big5 等编码
 
 ---
 
-#### 方式 C：直接粘贴
+#### 方式 B：直接粘贴
 
 用户粘贴的内容直接作为文本原材料，无需调用任何工具。
 
@@ -491,12 +381,7 @@ This Skill is compatible with Claude Code, OpenCode, Codex CLI, and similar AI c
 | Read PDF documents | `Read` / `read_file` tool (native PDF support) |
 | Read image screenshots | `Read` / `read_file` tool (native image support) |
 | Read MD/TXT files | `Read` / `read_file` tool |
-| Parse Feishu message JSON export | `Bash` → `python3 ${SKILL_DIR}/tools/feishu_parser.py` |
-| Feishu auto-collect (recommended) | `Bash` → `python3 ${SKILL_DIR}/tools/feishu_auto_collector.py` |
-| Feishu docs (browser session) | `Bash` → `python3 ${SKILL_DIR}/tools/feishu_browser.py` |
-| Feishu docs (MCP App Token) | `Bash` → `python3 ${SKILL_DIR}/tools/feishu_mcp_client.py` |
-| DingTalk auto-collect | `Bash` → `python3 ${SKILL_DIR}/tools/dingtalk_auto_collector.py` |
-| Parse email .eml/.mbox | `Bash` → `python3 ${SKILL_DIR}/tools/email_parser.py` |
+| Parse TXT chat logs (recommended) | `Bash` → `python3 ${SKILL_DIR}/tools/txt_parser.py` |
 | Write/update Skill files | `Write` / `write_file` / `Edit` tool |
 | Version management | `Bash` → `python3 ${SKILL_DIR}/tools/version_manager.py` |
 | List existing Skills | `Bash` → `python3 ${SKILL_DIR}/tools/skill_writer.py --action list` |
@@ -527,167 +412,62 @@ Ask the user how they'd like to provide materials:
 ```
 How would you like to provide source materials?
 
-  [A] Feishu Auto-Collect (recommended)
-      Enter name, auto-pull messages + docs + spreadsheets
+  [A] Import TXT chat logs (recommended)
+      Provide chat log file(s) or a directory; auto-parse and extract the target colleague's messages
+      Supports multiple files, multi-person conversations, and automatic noise filtering
 
-  [B] DingTalk Auto-Collect
-      Enter name, auto-pull docs + spreadsheets
-      Messages collected via browser (DingTalk API doesn't support message history)
-
-  [C] Feishu Link
-      Provide doc/Wiki link (browser session or MCP)
-
-  [D] Upload Files
-      PDF / images / exported JSON / email .eml
-
-  [E] Paste Text
-      Copy-paste text directly
+  [B] Paste Text
+      Copy-paste text directly (good for small amounts of text)
 
 Can mix and match, or skip entirely (generate from manual info only).
 ```
 
 ---
 
-#### Option A: Feishu Auto-Collect (Recommended)
+#### Option A: Import TXT Chat Logs (Recommended)
 
-First-time setup:
+**Supported TXT formats** (mixing formats is fine):
+- Format 1: `2024-01-01 10:00:00 Zhang San: message`
+- Format 2: `2024-01-01 Zhang San: message`
+- Format 3 (WeChat-style): timestamp alone on one line / sender alone on next line / content on next line
+- Format 4: `Zhang San: message` (no timestamp)
+- Format 5: `**Zhang San**: message` (Markdown bold)
+- Format 6 (enterprise ID): `Zhang San(z00611745)<TAB>2026-01-04 15:58:23` / content on next line
+
+**Steps**:
+
+1. User provides file path(s) or directory path
+
+2. **List speakers** (optional — helps confirm the exact target name):
 ```bash
-python3 ${SKILL_DIR}/tools/feishu_auto_collector.py --setup
+python3 ${SKILL_DIR}/tools/txt_parser.py \
+  --input {path_or_dir} \
+  --list-speakers
 ```
 
-After setup, just enter the name:
+3. **Extract target person's messages**:
 ```bash
-python3 ${SKILL_DIR}/tools/feishu_auto_collector.py \
-  --name "{name}" \
-  --output-dir ./knowledge/{slug} \
-  --msg-limit 1000 \
-  --doc-limit 20
-```
-
-Auto-collected content:
-- All messages sent by them in shared group chats (system messages and stickers filtered)
-- Feishu docs and Wikis they created/edited
-- Related spreadsheets (if accessible)
-
-After collection, `Read` the output files:
-- `knowledge/{slug}/messages.txt` → messages
-- `knowledge/{slug}/docs.txt` → document content
-- `knowledge/{slug}/collection_summary.json` → collection summary
-
-If collection fails (insufficient permissions / bot not in chat), inform user to:
-1. Add the Feishu App bot to relevant group chats
-2. Or switch to Option B/C
-
----
-
-#### Option B: DingTalk Auto-Collect
-
-First-time setup:
-```bash
-python3 ${SKILL_DIR}/tools/dingtalk_auto_collector.py --setup
-```
-
-Then enter the name:
-```bash
-python3 ${SKILL_DIR}/tools/dingtalk_auto_collector.py \
-  --name "{name}" \
-  --output-dir ./knowledge/{slug} \
-  --msg-limit 500 \
-  --doc-limit 20 \
-  --show-browser   # add this flag on first use to complete DingTalk login
-```
-
-Collected content:
-- DingTalk docs and knowledge bases they created/edited
-- Spreadsheets
-- Messages (⚠️ DingTalk API doesn't support message history — auto-switches to browser scraping)
-
-After collection, `Read`:
-- `knowledge/{slug}/docs.txt`
-- `knowledge/{slug}/bitables.txt`
-- `knowledge/{slug}/messages.txt`
-
-If message collection fails, prompt user to upload chat screenshots.
-
----
-
-#### Option C: Upload Files
-
-- **PDF / Images**: `Read` tool directly
-- **Feishu message JSON export**:
-  ```bash
-  python3 ${SKILL_DIR}/tools/feishu_parser.py --file {path} --target "{name}" --output /tmp/feishu_out.txt
-  ```
-  Then `Read /tmp/feishu_out.txt`
-- **Email files .eml / .mbox**:
-  ```bash
-  python3 ${SKILL_DIR}/tools/email_parser.py --file {path} --target "{name}" --output /tmp/email_out.txt
-  ```
-  Then `Read /tmp/email_out.txt`
-- **Markdown / TXT**: `Read` tool directly
-
----
-
-#### Option D: Feishu Link
-
-When the user provides a Feishu doc/Wiki link, ask which method to use:
-
-```
-Feishu link detected. Choose read method:
-
-  [1] Browser Method (recommended)
-      Reuses your local Chrome login session
-      ✅ Works with internal docs requiring permissions
-      ✅ No token configuration needed
-      ⚠️  Requires Chrome + playwright installed locally
-
-  [2] MCP Method
-      Uses Feishu App Token via official API
-      ✅ Stable, no browser dependency
-      ✅ Can read messages (needs chat ID)
-      ⚠️  Requires App ID / App Secret setup
-      ⚠️  Internal docs need admin authorization for the app
-
-Choose [1/2]:
-```
-
-**Option 1 (Browser)**:
-```bash
-python3 ${SKILL_DIR}/tools/feishu_browser.py \
-  --url "{feishu_url}" \
+python3 ${SKILL_DIR}/tools/txt_parser.py \
+  --input {path_or_dir} \
   --target "{name}" \
-  --output /tmp/feishu_doc_out.txt
+  --output /tmp/txt_parsed.txt
 ```
-First use will open a browser window for login (one-time).
+Multiple paths: `--input chat1.txt chat2.txt ./chats/`
+Non-recursive directory: `--no-recursive`
 
-**Option 2 (MCP)**:
-
-First-time setup:
-```bash
-python3 ${SKILL_DIR}/tools/feishu_mcp_client.py --setup
+4. Read the extracted result:
 ```
-
-Then read directly:
-```bash
-python3 ${SKILL_DIR}/tools/feishu_mcp_client.py \
-  --url "{feishu_url}" \
-  --output /tmp/feishu_doc_out.txt
+Read /tmp/txt_parsed.txt
 ```
 
-Read messages (needs chat ID, format `oc_xxx`):
-```bash
-python3 ${SKILL_DIR}/tools/feishu_mcp_client.py \
-  --chat-id "oc_xxx" \
-  --target "{name}" \
-  --limit 500 \
-  --output /tmp/feishu_msg_out.txt
-```
-
-Both methods output to files, then use `Read` to load results into analysis.
+**FAQ**:
+- If the target has fewer than 10 messages, the tool warns you — add more logs or supplement with manual description
+- If the target name isn't found, use `--list-speakers` to see the actual speaker names in the file
+- Encoding issues: the tool auto-tries UTF-8 / GBK / GB18030 / Big5
 
 ---
 
-#### Option E: Paste Text
+#### Option B: Paste Text
 
 User-pasted content is used directly as text material. No tools needed.
 
