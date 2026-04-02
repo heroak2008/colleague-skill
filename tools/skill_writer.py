@@ -125,6 +125,7 @@ def create_skill(
     meta: dict,
     work_content: str,
     persona_content: str,
+    relation_sources: dict | None = None,
 ) -> Path:
     """创建新的同事 Skill 目录结构"""
 
@@ -180,6 +181,13 @@ def create_skill(
     meta["version"] = "v1"
     meta.setdefault("corrections_count", 0)
 
+    # relation_sources：记录各关系类型对应的来源文件
+    # 结构：{"superior": [...], "peer": [...], "junior": [...]}
+    if relation_sources:
+        meta["relation_sources"] = relation_sources
+    else:
+        meta.setdefault("relation_sources", {"superior": [], "peer": [], "junior": []})
+
     (skill_dir / "meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -193,8 +201,13 @@ def update_skill(
     work_patch: Optional[str] = None,
     persona_patch: Optional[str] = None,
     correction: Optional[dict] = None,
+    relation_sources_patch: Optional[dict] = None,
 ) -> str:
-    """更新现有 Skill，先存档当前版本，再写入更新"""
+    """更新现有 Skill，先存档当前版本，再写入更新
+
+    relation_sources_patch：可选，格式为 {"superior": [...], "peer": [...], "junior": [...]}。
+      传入后将追加到 meta.json 中对应关系类型的来源文件列表。
+    """
 
     meta_path = skill_dir / "meta.json"
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -267,6 +280,20 @@ def update_skill(
     # 更新 meta
     meta["version"] = new_version
     meta["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    # 合并 relation_sources（追加新来源文件，去重）
+    if relation_sources_patch:
+        existing = meta.setdefault(
+            "relation_sources", {"superior": [], "peer": [], "junior": []}
+        )
+        for rel_key in ("superior", "peer", "junior"):
+            new_files = relation_sources_patch.get(rel_key, [])
+            if new_files:
+                current = existing.setdefault(rel_key, [])
+                for f in new_files:
+                    if f not in current:
+                        current.append(f)
+
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
     return new_version

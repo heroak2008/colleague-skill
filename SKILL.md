@@ -128,14 +128,49 @@ python3 ${SKILL_DIR}/tools/txt_parser.py \
 ```
 
 3. **提取目标人消息**：
-```bash
-python3 ${SKILL_DIR}/tools/txt_parser.py \
-  --input {path_or_dir} \
-  --target "{name}" \
-  --output /tmp/txt_parsed.txt
-```
-支持多个路径：`--input chat1.txt chat2.txt ./chats/`
-支持不递归目录：`--no-recursive`
+
+   首先询问用户这份记录是和谁的对话：
+   ```
+   这份记录是和谁的对话？
+     [1] 领导 / 上级（你对他说话是下属模式）
+     [2] 同级 / 平级（你们地位相当）
+     [3] 后辈 / 下属（你对他说话是带人模式）
+     [4] 混合（文件里有多种关系，跳过分类）
+   ```
+
+   根据用户选择，将对应关系类型传入 `--relation` 参数（选 [4] 则不传）：
+   ```bash
+   # 示例：跟领导的对话
+   python3 ${SKILL_DIR}/tools/txt_parser.py \
+     --input {path_or_dir} \
+     --target "{name}" \
+     --relation superior \
+     --output /tmp/txt_parsed_superior.txt
+
+   # 示例：跟平级的对话
+   python3 ${SKILL_DIR}/tools/txt_parser.py \
+     --input {path_or_dir} \
+     --target "{name}" \
+     --relation peer \
+     --output /tmp/txt_parsed_peer.txt
+
+   # 示例：跟后辈的对话
+   python3 ${SKILL_DIR}/tools/txt_parser.py \
+     --input {path_or_dir} \
+     --target "{name}" \
+     --relation junior \
+     --output /tmp/txt_parsed_junior.txt
+
+   # 示例：混合文件（不传 --relation）
+   python3 ${SKILL_DIR}/tools/txt_parser.py \
+     --input {path_or_dir} \
+     --target "{name}" \
+     --output /tmp/txt_parsed.txt
+   ```
+   支持多个路径：`--input chat1.txt chat2.txt ./chats/`
+   支持不递归目录：`--no-recursive`
+
+   **批量导入提示**：如果用户有多份不同关系的文件，可分批多次运行，每次指定不同 `--relation`，输出到不同文件（如 `txt_parsed_superior.txt`、`txt_parsed_peer.txt`）。
 
 4. 读取提取结果：
 ```
@@ -234,6 +269,11 @@ mkdir -p colleagues/{slug}/knowledge/emails
   },
   "impression": "{impression}",
   "knowledge_sources": [...已导入文件列表],
+  "relation_sources": {
+    "superior": [...跟领导的聊天文件],
+    "peer": [...跟平级的聊天文件],
+    "junior": [...跟后辈的聊天文件]
+  },
   "corrections_count": 0
 }
 ```
@@ -300,16 +340,17 @@ user-invocable: true
 
 用户提供新文件或文本时：
 
-1. 按 Step 2 的方式读取新内容
+1. 按 Step 2 的方式读取新内容，**同样询问关系类型**（领导/同级/后辈/混合）
 2. 用 `Read` 读取现有 `colleagues/{slug}/work.md` 和 `persona.md`
-3. 参考 `${SKILL_DIR}/prompts/merger.md` 分析增量内容
-4. 存档当前版本（用 Bash）：
+3. 读取 `colleagues/{slug}/meta.json`，查看 `relation_sources`，判断哪种关系类型目前**尚无**原材料——如有缺失，在更新 persona 时重点补充该关系下的风格描述
+4. 参考 `${SKILL_DIR}/prompts/merger.md` 分析增量内容
+5. 存档当前版本（用 Bash）：
    ```bash
    python3 ${SKILL_DIR}/tools/version_manager.py --action backup --slug {slug} --base-dir ./colleagues
    ```
-5. 用 `Edit` 工具追加增量内容到对应文件
-6. 重新生成 `SKILL.md`（合并最新 work.md + persona.md）
-7. 更新 `meta.json` 的 version 和 updated_at
+6. 用 `Edit` 工具追加增量内容到对应文件
+7. 重新生成 `SKILL.md`（合并最新 work.md + persona.md）
+8. 更新 `meta.json` 的 version、updated_at 以及 `relation_sources`（追加新来源文件）
 
 ---
 
@@ -453,14 +494,49 @@ python3 ${SKILL_DIR}/tools/txt_parser.py \
 ```
 
 3. **Extract target person's messages**:
-```bash
-python3 ${SKILL_DIR}/tools/txt_parser.py \
-  --input {path_or_dir} \
-  --target "{name}" \
-  --output /tmp/txt_parsed.txt
-```
-Multiple paths: `--input chat1.txt chat2.txt ./chats/`
-Non-recursive directory: `--no-recursive`
+
+   First ask the user what relationship this log represents:
+   ```
+   Who is this conversation with?
+     [1] Boss / Superior (you're in subordinate mode)
+     [2] Peer / Equal (you're on equal footing)
+     [3] Junior / Report (you're in mentorship/leadership mode)
+     [4] Mixed (multiple relationships in this file — skip classification)
+   ```
+
+   Pass the corresponding relation type via `--relation` (omit for [4]):
+   ```bash
+   # Example: conversation with superior
+   python3 ${SKILL_DIR}/tools/txt_parser.py \
+     --input {path_or_dir} \
+     --target "{name}" \
+     --relation superior \
+     --output /tmp/txt_parsed_superior.txt
+
+   # Example: conversation with peer
+   python3 ${SKILL_DIR}/tools/txt_parser.py \
+     --input {path_or_dir} \
+     --target "{name}" \
+     --relation peer \
+     --output /tmp/txt_parsed_peer.txt
+
+   # Example: conversation with junior
+   python3 ${SKILL_DIR}/tools/txt_parser.py \
+     --input {path_or_dir} \
+     --target "{name}" \
+     --relation junior \
+     --output /tmp/txt_parsed_junior.txt
+
+   # Example: mixed file (no --relation)
+   python3 ${SKILL_DIR}/tools/txt_parser.py \
+     --input {path_or_dir} \
+     --target "{name}" \
+     --output /tmp/txt_parsed.txt
+   ```
+   Multiple paths: `--input chat1.txt chat2.txt ./chats/`
+   Non-recursive directory: `--no-recursive`
+
+   **Bulk import tip**: If the user has multiple files for different relationships, run the tool multiple times with different `--relation` values, saving to separate output files (e.g., `txt_parsed_superior.txt`, `txt_parsed_peer.txt`).
 
 4. Read the extracted result:
 ```
@@ -559,6 +635,11 @@ Content:
   },
   "impression": "{impression}",
   "knowledge_sources": [...imported file list],
+  "relation_sources": {
+    "superior": [...chat files with superiors],
+    "peer": [...chat files with peers],
+    "junior": [...chat files with juniors]
+  },
   "corrections_count": 0
 }
 ```
@@ -625,16 +706,17 @@ If something feels off, just say "he wouldn't do that" and I'll update it.
 
 When user provides new files or text:
 
-1. Read new content using Step 2 methods
+1. Read new content using Step 2 methods, **including asking for the relationship type** (superior/peer/junior/mixed)
 2. `Read` existing `colleagues/{slug}/work.md` and `persona.md`
-3. Refer to `${SKILL_DIR}/prompts/merger.md` for incremental analysis
-4. Archive current version (Bash):
+3. Read `colleagues/{slug}/meta.json` and check `relation_sources` — if any relationship type is missing, prioritize filling that gap when updating persona
+4. Refer to `${SKILL_DIR}/prompts/merger.md` for incremental analysis
+5. Archive current version (Bash):
    ```bash
    python3 ${SKILL_DIR}/tools/version_manager.py --action backup --slug {slug} --base-dir ./colleagues
    ```
-5. Use `Edit` tool to append incremental content to relevant files
-6. Regenerate `SKILL.md` (merge latest work.md + persona.md)
-7. Update `meta.json` version and updated_at
+6. Use `Edit` tool to append incremental content to relevant files
+7. Regenerate `SKILL.md` (merge latest work.md + persona.md)
+8. Update `meta.json` version, updated_at, and `relation_sources` (append new source files)
 
 ---
 
