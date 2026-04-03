@@ -429,14 +429,21 @@ python3 ${SKILL_DIR}/tools/habit_manager.py init \
 3. 读取 `shadows/{slug}/meta.json`，查看 `relation_sources`，判断哪种场景类型目前**尚无**原材料——如有缺失，在更新 persona 时重点补充该场景下的风格描述
 4. 参考 `${SKILL_DIR}/prompts/merger.md` 分析增量内容
    - 若新内容为 Markdown 文档，同时执行 Step 3b（文档写作风格区块增量更新）
-5. 存档当前版本（用 Bash）：
+5. 将增量内容写入临时文件（用 `Write` 工具），然后调用 `skill_writer.py update` 一键完成存档、追加、重新生成 SKILL.md、递增版本号：
    ```bash
-   python3 ${SKILL_DIR}/tools/version_manager.py --action backup --slug {slug} --base-dir ./shadows
+   # 有工作能力增量时，先用 Write 工具将增量内容写到 /tmp/work_patch.md
+   # 有人物性格增量时，先用 Write 工具将增量内容写到 /tmp/persona_patch.md
+
+   python3 ${SKILL_DIR}/tools/skill_writer.py \
+     --action update \
+     --slug {slug} --base-dir ./shadows \
+     [--work-patch /tmp/work_patch.md] \
+     [--persona-patch /tmp/persona_patch.md]
    ```
-6. 用 `Edit` 工具追加增量内容到对应文件
-7. 重新生成 `SKILL.md`（合并最新 work.md + persona.md）
-8. 更新 `meta.json` 的 version、updated_at、`relation_sources`，以及 `markdown_sources`（若有新增 Markdown 文档）
-9. 扫描聊天记录，更新习惯活跃状态（用 Bash）：
+   > 此命令会自动将当前版本备份到 `shadows/{slug}/versions/` 目录，并将版本号递增（v1 → v2 → v3…）。
+   > **不要再单独调用 `version_manager.py backup`**，否则会与内置存档冲突。
+6. 若 `relation_sources` 有变化（新增来源文件），用 `Edit` 工具更新 `meta.json` 中的 `relation_sources` 字段；若有新增 Markdown 文档，同样更新 `markdown_sources`
+7. 扫描聊天记录，更新习惯活跃状态（用 Bash）：
    ```bash
    python3 ${SKILL_DIR}/tools/habit_manager.py scan \
      --slug {slug} --base-dir ./shadows
@@ -733,8 +740,20 @@ When user provides new files or text:
 2. `Read` existing `shadows/{slug}/work.md` and `persona.md`
 3. Refer to `${SKILL_DIR}/prompts/merger.md` for incremental analysis
    - If new content is Markdown documents, also execute Step 3b (document style section incremental update)
-4. Archive current version, apply edits, regenerate `SKILL.md`
-5. Update `meta.json`: version, updated_at, `relation_sources`, and `markdown_sources` (if new Markdown files added)
+4. Write incremental content to temp files (using the `Write` tool), then call `skill_writer.py update` to atomically archive, append, regenerate `SKILL.md`, and increment the version number:
+   ```bash
+   # If work content changed: write the delta to /tmp/work_patch.md using the Write tool
+   # If persona content changed: write the delta to /tmp/persona_patch.md using the Write tool
+
+   python3 ${SKILL_DIR}/tools/skill_writer.py \
+     --action update \
+     --slug {slug} --base-dir ./shadows \
+     [--work-patch /tmp/work_patch.md] \
+     [--persona-patch /tmp/persona_patch.md]
+   ```
+   > This automatically backs up the current version to `shadows/{slug}/versions/` and increments the version number (v1 → v2 → v3…).
+   > **Do not call `version_manager.py backup` separately** — the backup is already built into this command.
+5. If `relation_sources` changed (new source files added), use the `Edit` tool to update the `relation_sources` field in `meta.json`; if new Markdown documents were added, also update `markdown_sources`
 
 ---
 

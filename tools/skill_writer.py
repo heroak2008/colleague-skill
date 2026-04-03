@@ -244,7 +244,7 @@ def update_skill(
     # 存档当前版本
     version_dir = skill_dir / "versions" / current_version
     version_dir.mkdir(parents=True, exist_ok=True)
-    for fname in ("SKILL.md", "work.md", "persona.md"):
+    for fname in ("SKILL.md", "work.md", "persona.md", "meta.json"):
         src = skill_dir / fname
         if src.exists():
             shutil.copy2(src, version_dir / fname)
