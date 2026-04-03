@@ -464,8 +464,14 @@ python3 ${SKILL_DIR}/tools/habit_manager.py init \
 python3 ${SKILL_DIR}/tools/skill_writer.py --action list --base-dir ./shadows
 ```
 
-`/shadow-rollback {slug} {version}`：
+`/shadow-rollback {slug}`（先列出版本，再让用户选择）：
 ```bash
+# 第一步：列出可回退的历史版本
+python3 ${SKILL_DIR}/tools/version_manager.py --action list --slug {slug} --base-dir ./shadows
+```
+展示版本列表后，询问用户想回退到哪个版本，然后执行：
+```bash
+# 第二步：回退到指定版本（当前版本会自动备份）
 python3 ${SKILL_DIR}/tools/version_manager.py --action rollback --slug {slug} --version {version} --base-dir ./shadows
 ```
 
@@ -750,8 +756,14 @@ When user says "that's wrong" / "I should actually be":
 python3 ${SKILL_DIR}/tools/skill_writer.py --action list --base-dir ./shadows
 ```
 
-`/shadow-rollback {slug} {version}`:
+`/shadow-rollback {slug}` (list versions first, then let user pick):
 ```bash
+# Step 1: List available versions
+python3 ${SKILL_DIR}/tools/version_manager.py --action list --slug {slug} --base-dir ./shadows
+```
+After showing the version list, ask the user which version to restore, then run:
+```bash
+# Step 2: Roll back to the chosen version (current version is auto-backed up)
 python3 ${SKILL_DIR}/tools/version_manager.py --action rollback --slug {slug} --version {version} --base-dir ./shadows
 ```
 

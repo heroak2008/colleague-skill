@@ -2,11 +2,13 @@
 """
 版本管理器
 
-负责 Skill 文件的版本存档和回滚。
+负责影分身 Skill 文件的版本存档和回滚。
 
 用法：
-    python version_manager.py --action list --slug zhangsan --base-dir ~/.openclaw/...
-    python version_manager.py --action rollback --slug zhangsan --version v2 --base-dir ~/.openclaw/...
+    python version_manager.py --action list    --slug my-shadow --base-dir ./shadows
+    python version_manager.py --action backup  --slug my-shadow --base-dir ./shadows
+    python version_manager.py --action rollback --slug my-shadow --version v2 --base-dir ./shadows
+    python version_manager.py --action cleanup --slug my-shadow --base-dir ./shadows
 """
 
 from __future__ import annotations
@@ -35,9 +37,23 @@ def list_versions(skill_dir: Path) -> list:
         # 从目录名解析版本号
         version_name = v_dir.name
 
-        # 获取存档时间（用目录修改时间近似）
-        mtime = v_dir.stat().st_mtime
-        archived_at = datetime.fromtimestamp(mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+        # 优先从存档的 meta.json 读取存档时间
+        archived_at = None
+        meta_file = v_dir / "meta.json"
+        if meta_file.exists():
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+                ts = meta.get("updated_at") or meta.get("created_at")
+                if ts:
+                    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    archived_at = dt.strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                pass
+
+        # fallback：用目录修改时间近似
+        if not archived_at:
+            mtime = v_dir.stat().st_mtime
+            archived_at = datetime.fromtimestamp(mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
 
         # 统计文件
         files = [f.name for f in v_dir.iterdir() if f.is_file()]
@@ -52,6 +68,32 @@ def list_versions(skill_dir: Path) -> list:
     return versions
 
 
+def backup(skill_dir: Path) -> str:
+    """将当前版本存档到 versions/ 目录，返回被存档的版本号"""
+    meta_path = skill_dir / "meta.json"
+    if not meta_path.exists():
+        print("错误：找不到 meta.json，无法确定当前版本", file=sys.stderr)
+        return ""
+
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    current_version = meta.get("version", "v1")
+
+    version_dir = skill_dir / "versions" / current_version
+    version_dir.mkdir(parents=True, exist_ok=True)
+
+    archived_files = []
+    for fname in ("SKILL.md", "work.md", "persona.md", "meta.json"):
+        src = skill_dir / fname
+        if src.exists():
+            shutil.copy2(src, version_dir / fname)
+            archived_files.append(fname)
+
+    cleanup_old_versions(skill_dir)
+
+    print(f"已存档版本 {current_version}，文件：{', '.join(archived_files)}")
+    return current_version
+
+
 def rollback(skill_dir: Path, target_version: str) -> bool:
     """回滚到指定版本"""
     version_dir = skill_dir / "versions" / target_version
@@ -60,27 +102,28 @@ def rollback(skill_dir: Path, target_version: str) -> bool:
         print(f"错误：版本 {target_version} 不存在", file=sys.stderr)
         return False
 
-    # 先存档当前版本
+    # 先存档当前版本（包含 meta.json）
     meta_path = skill_dir / "meta.json"
+    current_version = "unknown"
     if meta_path.exists():
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         current_version = meta.get("version", "v?")
         backup_dir = skill_dir / "versions" / f"{current_version}_before_rollback"
         backup_dir.mkdir(parents=True, exist_ok=True)
-        for fname in ("SKILL.md", "work.md", "persona.md"):
+        for fname in ("SKILL.md", "work.md", "persona.md", "meta.json"):
             src = skill_dir / fname
             if src.exists():
                 shutil.copy2(src, backup_dir / fname)
 
-    # 从目标版本恢复文件
+    # 从目标版本恢复文件（SKILL.md、work.md、persona.md、meta.json）
     restored_files = []
-    for fname in ("SKILL.md", "work.md", "persona.md"):
+    for fname in ("SKILL.md", "work.md", "persona.md", "meta.json"):
         src = version_dir / fname
         if src.exists():
             shutil.copy2(src, skill_dir / fname)
             restored_files.append(fname)
 
-    # 更新 meta
+    # 更新 meta：标记回滚状态（无论 meta.json 是否从版本目录恢复）
     if meta_path.exists():
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         meta["version"] = target_version + "_restored"
@@ -113,13 +156,13 @@ def cleanup_old_versions(skill_dir: Path, max_versions: int = MAX_VERSIONS):
 
 def main():
     parser = argparse.ArgumentParser(description="Skill 版本管理器")
-    parser.add_argument("--action", required=True, choices=["list", "rollback", "cleanup"])
-    parser.add_argument("--slug", required=True, help="同事 slug")
+    parser.add_argument("--action", required=True, choices=["list", "backup", "rollback", "cleanup"])
+    parser.add_argument("--slug", required=True, help="影分身 slug")
     parser.add_argument("--version", help="目标版本号（rollback 时使用）")
     parser.add_argument(
         "--base-dir",
-        default="~/.openclaw/workspace/skills/colleagues",
-        help="同事 Skill 根目录",
+        default="./shadows",
+        help="影分身 Skill 根目录（默认：./shadows）",
     )
 
     args = parser.parse_args()
@@ -139,11 +182,18 @@ def main():
             for v in versions:
                 print(f"  {v['version']}  存档时间: {v['archived_at']}  文件: {', '.join(v['files'])}")
 
+    elif args.action == "backup":
+        result = backup(skill_dir)
+        if not result:
+            sys.exit(1)
+
     elif args.action == "rollback":
         if not args.version:
             print("错误：rollback 操作需要 --version", file=sys.stderr)
             sys.exit(1)
-        rollback(skill_dir, args.version)
+        success = rollback(skill_dir, args.version)
+        if not success:
+            sys.exit(1)
 
     elif args.action == "cleanup":
         cleanup_old_versions(skill_dir)
